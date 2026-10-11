@@ -8,23 +8,21 @@ export interface PontoRegistro {
 }
 
 export function canRegisterPontoAction(action: PontoAction, registro: PontoRegistro | null | undefined) {
-  if (!registro) {
-    return action === "entrada";
-  }
+  if (!registro) return action === "entrada";
 
-  if (registro[action]) {
-    return false;
-  }
+  // The daily record is immutable in sequence: once the final exit exists,
+  // no additional action can be registered for that workday.
+  if (registro.saida) return false;
 
   switch (action) {
     case "entrada":
-      return !registro.entrada;
+      return false;
     case "almoco_saida":
-      return !!registro.entrada && !registro.saida;
+      return !!registro.entrada && !registro.almoco_saida;
     case "almoco_retorno":
-      return !!registro.almoco_saida && !registro.saida;
+      return !!registro.entrada && !!registro.almoco_saida && !registro.almoco_retorno;
     case "saida":
-      return !!registro.entrada && !registro.saida && (!registro.almoco_saida || !!registro.almoco_retorno);
+      return !!registro.entrada && (!registro.almoco_saida || !!registro.almoco_retorno);
     default:
       return false;
   }
