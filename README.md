@@ -32,7 +32,7 @@ Siga os passos abaixo para rodar o projeto em sua máquina:
     ```
 
 2.  **Configuração do Ambiente:**
-    Edite o arquivo `.env` na raiz do projeto e preencha as seguintes chaves:
+    Copie `.env.example` para `.env.local` na raiz do projeto e preencha as seguintes chaves:
 
     ```env
     VITE_SUPABASE_PROJECT_ID=seu_project_id
@@ -51,59 +51,15 @@ Siga os passos abaixo para rodar o projeto em sua máquina:
 
 ## ⚙️ Configurações Importantes
 
-- **Primeiro Acesso:** O primeiro usuário cadastrado no sistema receberá automaticamente permissões de **Administrador**. Os cadastros seguintes serão processados como usuários comuns.
-- **E-mails de Boas-vindas:** Caso prefira não enviar o e-mail automático do Supabase, você pode desabitar essa opção no painel de controle da Auth no Supabase Dashboard.
+- **Administrador inicial:** a aplicação não eleva automaticamente o primeiro cadastro a administrador. Faça a atribuição pelo painel autorizado do sistema ou pelo SQL Editor do Supabase, depois de confirmar a identidade do usuário.
+- **E-mails de Boas-vindas:** configure a confirmação de e-mail no painel de Authentication do Supabase conforme a política da sua organização.
+- **Variáveis públicas do frontend:** use somente a URL do projeto e a chave publishable/anon. Nunca coloque a chave `service_role`, uma chave secreta ou senhas em variáveis `VITE_*`.
 
 ---
 
 ## ⏰ Automações & Cron Jobs
 
-O sistema utiliza o `pg_cron` do Supabase para automatizar tarefas diárias. Para configurar, acesse o **SQL Editor** do seu projeto Supabase e execute os comandos abaixo.
-
-### 1. Habilitar extensões necessárias
-```sql
-CREATE EXTENSION IF NOT EXISTS pg_cron;
-CREATE EXTENSION IF NOT EXISTS pg_net;
-```
-
-### 2. Agendar Verificação de Ausências e Banco de Horas
-Substitua `<SUA_URL_DO_SUPABASE>` e `<SUA_ANON_KEY>` pelos valores do seu projeto:
-
-```sql
--- Verificar ausências diariamente às 23:00 (BRT)
-SELECT cron.schedule(
-  'verificar-ausencias-diario',
-  '0 2 * * *',
-  $$
-  SELECT net.http_post(
-    url := 'https://<SUA_URL_DO_SUPABASE>/functions/v1/verificar-ausencias',
-    headers := jsonb_build_object(
-      'Content-Type', 'application/json',
-      'Authorization', 'Bearer <SUA_ANON_KEY>'
-    ),
-    body := jsonb_build_object('data', to_char(now() AT TIME ZONE 'America/Sao_Paulo', 'YYYY-MM-DD'))
-  );
-  $$
-);
-
--- Calcular banco de horas diariamente às 23:30 (BRT)
-SELECT cron.schedule(
-  'calcular-banco-horas-diario',
-  '30 2 * * *',
-  $$
-  SELECT net.http_post(
-    url := 'https://<SUA_URL_DO_SUPABASE>/functions/v1/calcular-banco-horas',
-    headers := jsonb_build_object(
-      'Content-Type', 'application/json',
-      'Authorization', 'Bearer <SUA_ANON_KEY>'
-    ),
-    body := jsonb_build_object('data', to_char(now() AT TIME ZONE 'America/Sao_Paulo', 'YYYY-MM-DD'))
-  );
-  $$
-);
-```
-
----
+As Edge Functions de verificação de ausências e cálculo de banco de horas exigem autenticação válida de administrador ou chamada interna confiável. **Não agende essas funções com a chave pública anon como token de autorização.** O agendamento automático deve ser configurado com um segredo interno mantido fora do frontend e do repositório.
 
 ## 🔗 Links Úteis & Tutoriais
 
@@ -118,7 +74,17 @@ Preparamos alguns materiais para te ajudar na jornada:
 
 ## 📦 Deploy
 
-Para deploy em produção, recomendamos o uso do **Deploy Manager Pro** ou a integração nativa do Supabase CLI para uma experiência simplificada e segura.
+### Vercel
+
+1. Importe o repositório `adrianomkt2038-debug/pontopro` na sua conta Vercel.
+2. Use o preset **Vite**, comando de build `npm run build` e diretório de saída `dist` (já descritos em `vercel.json`).
+3. Em **Settings → Environment Variables**, configure:
+   - `VITE_SUPABASE_PROJECT_ID`
+   - `VITE_SUPABASE_URL`
+   - `VITE_SUPABASE_PUBLISHABLE_KEY`
+4. Faça o deploy em Production. O workflow do GitHub Actions verifica o build quando há push na branch `main`.
+
+As migrações do banco e as seis Edge Functions devem ser aplicadas ao projeto Supabase de destino. Nunca configure uma chave privilegiada do Supabase no frontend ou na Vercel como variável `VITE_*`.
 
 ---
 
