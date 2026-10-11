@@ -46,9 +46,16 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         setRolesLoaded(false);
         // Defer fetching to avoid Supabase auth callback deadlocks.
         setTimeout(async () => {
-          await Promise.all([fetchProfile(session.user.id), fetchRoles(session.user.id)]);
-          setRolesLoaded(true);
-          setLoading(false);
+          try {
+            await Promise.all([fetchProfile(session.user.id), fetchRoles(session.user.id)]);
+          } catch (error) {
+            console.error("Erro ao carregar o perfil de autenticação:", error);
+            setProfile(null);
+            setRoles([]);
+          } finally {
+            setRolesLoaded(true);
+            setLoading(false);
+          }
         }, 0);
       } else {
         setProfile(null);
@@ -64,13 +71,29 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       if (session?.user) {
         setLoading(true);
         setRolesLoaded(false);
-        await Promise.all([fetchProfile(session.user.id), fetchRoles(session.user.id)]);
-        setRolesLoaded(true);
+        try {
+          await Promise.all([fetchProfile(session.user.id), fetchRoles(session.user.id)]);
+        } catch (error) {
+          console.error("Erro ao inicializar a sessão:", error);
+          setProfile(null);
+          setRoles([]);
+        } finally {
+          setRolesLoaded(true);
+          setLoading(false);
+        }
       } else {
         setProfile(null);
         setRoles([]);
         setRolesLoaded(true);
+        setLoading(false);
       }
+    }).catch((error) => {
+      console.error("Falha ao recuperar sessão do Supabase:", error);
+      setSession(null);
+      setUser(null);
+      setProfile(null);
+      setRoles([]);
+      setRolesLoaded(true);
       setLoading(false);
     });
 
