@@ -11,6 +11,7 @@ interface AuthContextType {
   loading: boolean;
   profile: { full_name: string; email: string; avatar_url: string | null; matricula: string | null } | null;
   roles: AppRole[];
+  rolesLoaded: boolean;
   isAdmin: boolean;
   isGestor: boolean;
   signOut: () => Promise<void>;
@@ -22,6 +23,7 @@ const AuthContext = createContext<AuthContextType>({
   loading: true,
   profile: null,
   roles: [],
+  rolesLoaded: false,
   isAdmin: false,
   isGestor: false,
   signOut: async () => {},
@@ -33,30 +35,41 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [loading, setLoading] = useState(true);
   const [profile, setProfile] = useState<AuthContextType["profile"]>(null);
   const [roles, setRoles] = useState<AppRole[]>([]);
+  const [rolesLoaded, setRolesLoaded] = useState(false);
 
   useEffect(() => {
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
       setSession(session);
       setUser(session?.user ?? null);
       if (session?.user) {
-        // Defer fetching to avoid deadlock
-        setTimeout(() => {
-          fetchProfile(session.user.id);
-          fetchRoles(session.user.id);
+        setLoading(true);
+        setRolesLoaded(false);
+        // Defer fetching to avoid Supabase auth callback deadlocks.
+        setTimeout(async () => {
+          await Promise.all([fetchProfile(session.user.id), fetchRoles(session.user.id)]);
+          setRolesLoaded(true);
+          setLoading(false);
         }, 0);
       } else {
         setProfile(null);
         setRoles([]);
+        setRolesLoaded(true);
+        setLoading(false);
       }
-      setLoading(false);
     });
 
-    supabase.auth.getSession().then(({ data: { session } }) => {
+    supabase.auth.getSession().then(async ({ data: { session } }) => {
       setSession(session);
       setUser(session?.user ?? null);
       if (session?.user) {
-        fetchProfile(session.user.id);
-        fetchRoles(session.user.id);
+        setLoading(true);
+        setRolesLoaded(false);
+        await Promise.all([fetchProfile(session.user.id), fetchRoles(session.user.id)]);
+        setRolesLoaded(true);
+      } else {
+        setProfile(null);
+        setRoles([]);
+        setRolesLoaded(true);
       }
       setLoading(false);
     });
@@ -106,7 +119,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const isGestor = roles.includes("gestor");
 
   return (
-    <AuthContext.Provider value={{ user, session, loading, profile, roles, isAdmin, isGestor, signOut }}>
+    <AuthContext.Provider value={{ user, session, loading, profile, roles, rolesLoaded, isAdmin, isGestor, signOut }}>
       {children}
     </AuthContext.Provider>
   );
