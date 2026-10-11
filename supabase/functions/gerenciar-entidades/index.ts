@@ -149,6 +149,18 @@ async function getAuthContext(req: Request) {
   const userId = claimsData.claims.sub as string;
   const supabaseAdmin = createClient(supabaseUrl, serviceRoleKey);
 
+  const { data: activeProfile, error: activeProfileError } = await supabaseAdmin
+    .from("profiles")
+    .select("active")
+    .eq("user_id", userId)
+    .maybeSingle();
+  if (activeProfileError) {
+    return { error: jsonResponse({ success: false, error: "Internal error" }, 500) };
+  }
+  if (!activeProfile?.active) {
+    return { error: jsonResponse({ success: false, error: "Conta desativada ou perfil ativo não encontrado" }, 403) };
+  }
+
   const { data: rolesData, error: rolesError } = await supabaseAdmin
     .from("user_roles")
     .select("role")
