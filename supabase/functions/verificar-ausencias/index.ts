@@ -6,6 +6,17 @@ const corsHeaders = {
     "authorization, x-client-info, apikey, content-type, x-supabase-client-platform, x-supabase-client-platform-version, x-supabase-client-runtime, x-supabase-client-runtime-version",
 };
 
+function getBusinessDate(date = new Date()): string {
+  const parts = new Intl.DateTimeFormat("en-CA", {
+    timeZone: "America/Bahia",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).formatToParts(date);
+  const values = Object.fromEntries(parts.map((part) => [part.type, part.value]));
+  return `${values.year}-${values.month}-${values.day}`;
+}
+
 Deno.serve(async (req: Request) => {
   if (req.method === "OPTIONS") {
     return new Response(null, { headers: corsHeaders });
@@ -38,6 +49,17 @@ Deno.serve(async (req: Request) => {
           headers: { ...corsHeaders, "Content-Type": "application/json" },
         });
       }
+      const { data: activeProfile, error: activeProfileError } = await supabase
+        .from("profiles")
+        .select("active")
+        .eq("user_id", claimsData.claims.sub)
+        .maybeSingle();
+      if (activeProfileError || !activeProfile?.active) {
+        return new Response(JSON.stringify({ success: false, error: "Conta desativada ou perfil ativo não encontrado" }), {
+          status: 403, headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+
       const { data: adminRole, error: roleError } = await supabase
         .from("user_roles")
         .select("role")
@@ -54,7 +76,7 @@ Deno.serve(async (req: Request) => {
 
     // Get target date — defaults to today (UTC), or accept ?data=YYYY-MM-DD
     const url = new URL(req.url);
-    const hoje = url.searchParams.get("data") || new Date().toISOString().split("T")[0];
+    const hoje = url.searchParams.get("data") || getBusinessDate();
 
     // Day of week: JS getDay() → 0=Sun … 6=Sat — DB stores 0=Sun or 1=Mon?
     // The escalas.dias_semana uses: 1=Mon … 5=Fri typically
