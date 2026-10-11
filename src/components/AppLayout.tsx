@@ -44,6 +44,7 @@ export function AppLayout({ children }: { children: ReactNode }) {
               <SidebarTrigger className="h-9 w-9" />
               <div className="h-6 w-[1px] bg-border hidden sm:block" />
               <h2 className="text-sm font-semibold text-muted-foreground hidden md:block">
+                Ponto Pro <span className="mx-1 text-border">/</span>
                 <span className="text-foreground capitalize">
                   {location.pathname.replace("/", "").replace("-", " ") ||
                     "Dashboard"}
