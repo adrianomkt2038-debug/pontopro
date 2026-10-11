@@ -40,7 +40,6 @@ import { Separator } from "@/components/ui/separator";
 const mainItems = [
   { title: "Painel", subtitle: "Visão geral", url: "/dashboard", icon: LayoutDashboard },
   { title: "Registros do Dia", subtitle: "Pontos do dia", url: "/registros", icon: Clock },
-  { title: "Registro Facial", subtitle: "Ponto por reconhecimento", url: "/registro-ponto", icon: ScanFace },
   { title: "Ocorrências", subtitle: "Ocorrências e edições", url: "/aprovacoes", icon: CheckSquare },
   { title: "Justificativas", subtitle: "Atestados e faltas", url: "/justificativas", icon: FileText },
   { title: "Banco de Horas", subtitle: "Horas extras e saldos", url: "/banco-horas", icon: Wallet },
@@ -55,6 +54,7 @@ const colaboradorItems = [
 ];
 
 const adminItems = [
+  { title: "Registro Facial", subtitle: "Terminal de reconhecimento", url: "/registro-ponto", icon: ScanFace },
   { title: "Usuários", subtitle: "Gerenciar", url: "/usuarios", icon: Users },
   { title: "Cadastro", subtitle: "Novo funcionário", url: "/cadastro-funcionario", icon: UserPlus },
   { title: "Cargos", subtitle: "Funções", url: "/cargos", icon: Briefcase },
