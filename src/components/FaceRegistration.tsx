@@ -84,42 +84,14 @@ export function FaceRegistration({ userId, userName, onRegistered }: FaceRegistr
     };
   }, [cameraActive, toast]);
 
-  const uploadFacePhoto = useCallback(
-    async (source: HTMLVideoElement | HTMLImageElement): Promise<string | null> => {
-      try {
-        const canvas = document.createElement("canvas");
-        canvas.width = source instanceof HTMLVideoElement ? source.videoWidth : source.naturalWidth;
-        canvas.height = source instanceof HTMLVideoElement ? source.videoHeight : source.naturalHeight;
-        canvas.getContext("2d")!.drawImage(source, 0, 0);
-        const blob = await new Promise<Blob | null>((r) => canvas.toBlob(r, "image/jpeg", 0.85));
-        if (!blob) return null;
-
-        const filePath = `${userId}.jpg`;
-        const { error: uploadError } = await supabase.storage.from("face-photos").upload(filePath, blob, { upsert: true, contentType: "image/jpeg" });
-        if (uploadError) {
-          console.error("Upload error:", uploadError);
-          return null;
-        }
-
-        const { data: urlData } = supabase.storage.from("face-photos").getPublicUrl(filePath);
-        return urlData?.publicUrl ? `${urlData.publicUrl}?t=${Date.now()}` : null;
-      } catch (err) {
-        console.error("Failed to upload face photo:", err);
-        return null;
-      }
-    },
-    [userId]
-  );
-
   const saveDescriptor = useCallback(
-    async (descriptor: number[], source?: HTMLVideoElement | HTMLImageElement) => {
+    async (descriptor: number[]) => {
       try {
-        const avatarUrl = source ? await uploadFacePhoto(source) : null;
-
+        // Keep only the descriptor; do not persist raw facial photos.
         await invokeEntityAction("face_descriptor_upsert", {
           target_user_id: userId,
           descriptor,
-          avatar_url: avatarUrl,
+          avatar_url: null,
         });
 
         setSuccess(true);
@@ -135,7 +107,7 @@ export function FaceRegistration({ userId, userName, onRegistered }: FaceRegistr
         toast({ title: "Erro", description: "Falha ao salvar dados faciais", variant: "destructive" });
       }
     },
-    [userId, userName, toast, stopCamera, onRegistered, uploadFacePhoto]
+    [userId, userName, toast, stopCamera, onRegistered]
   );
 
   const captureFromCamera = useCallback(async () => {
@@ -148,7 +120,7 @@ export function FaceRegistration({ userId, userName, onRegistered }: FaceRegistr
         toast({ title: "Nenhum rosto detectado", description: "Posicione o rosto na câmera e tente novamente", variant: "destructive" });
         return;
       }
-      await saveDescriptor(Array.from(detection.descriptor), videoRef.current);
+      await saveDescriptor(Array.from(detection.descriptor));
     } catch (err) {
       console.error(err);
       toast({ title: "Erro", description: "Falha ao processar rosto", variant: "destructive" });
@@ -177,7 +149,7 @@ export function FaceRegistration({ userId, userName, onRegistered }: FaceRegistr
           toast({ title: "Nenhum rosto detectado", description: "A foto precisa conter um rosto visível", variant: "destructive" });
           return;
         }
-        await saveDescriptor(descriptor, img);
+        await saveDescriptor(descriptor);
       } catch (err) {
         console.error(err);
         toast({ title: "Erro", description: "Falha ao processar foto", variant: "destructive" });
