@@ -47,7 +47,7 @@ function ProtectedRoute({ children, adminOnly = false }: { children: React.React
           </div>
           
           <h2 className="text-xl font-bold tracking-tight text-foreground animate-pulse">
-            Carregando Ponto Pro...
+            Carregando sistema...
           </h2>
           <p className="text-sm text-muted-foreground mt-2 font-medium">
             Preparando seu ambiente seguro
