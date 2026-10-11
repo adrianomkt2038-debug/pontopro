@@ -100,7 +100,16 @@ export function AppSidebar() {
           <div className={`flex h-11 w-11 items-center justify-center rounded-2xl shrink-0 ${collapsed ? 'bg-sidebar-accent/50' : 'bg-gradient-premium shadow-md'}`}>
             <Timer className={`h-6 w-6 ${collapsed ? 'text-sidebar-primary' : 'text-sidebar-primary-foreground'}`} />
           </div>
-          {/* Product/vendor branding text intentionally hidden for all users. */}
+          {!collapsed && (
+            <div className="flex flex-col">
+              <h2 className="text-lg font-extrabold tracking-tight text-sidebar-primary-foreground font-['Space_Grotesk'] leading-none">
+                Ponto Pro
+              </h2>
+              <p className="text-[10px] uppercase font-bold tracking-[0.2em] text-sidebar-foreground/40 mt-1">
+                Time Insight
+              </p>
+            </div>
+          )}
         </div>
       </SidebarHeader>
 
