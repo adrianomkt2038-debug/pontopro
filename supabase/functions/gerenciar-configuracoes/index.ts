@@ -41,8 +41,21 @@ Deno.serve(async (req) => {
 
     const userId = claimsData.claims.sub as string;
 
-    // Check admin role using service role client
+    // Check account state before using service-role privileges.
     const supabaseAdmin = createClient(supabaseUrl, supabaseServiceKey);
+    const { data: activeProfile, error: activeProfileError } = await supabaseAdmin
+      .from("profiles")
+      .select("active")
+      .eq("user_id", userId)
+      .maybeSingle();
+    if (activeProfileError) throw activeProfileError;
+    if (!activeProfile?.active) {
+      return new Response(JSON.stringify({ success: false, error: "Conta desativada ou perfil ativo não encontrado" }), {
+        status: 403, headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
+    // Check admin role using service role client
     const { data: roleData } = await supabaseAdmin
       .from("user_roles")
       .select("role")
