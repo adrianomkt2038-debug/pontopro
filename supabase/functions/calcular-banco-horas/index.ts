@@ -23,7 +23,7 @@ Deno.serve(async (req) => {
 
     const authHeader = req.headers.get("Authorization");
     const token = authHeader?.replace("Bearer ", "") || "";
-    const isCron = token === anonKey || token === serviceKey;
+    const isCron = token === serviceKey;
 
     // If not a cron call, validate user is admin
     if (!isCron) {
