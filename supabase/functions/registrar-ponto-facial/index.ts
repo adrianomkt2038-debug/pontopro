@@ -33,6 +33,17 @@ function parseOS(ua: string): string {
   return "Desconhecido";
 }
 
+function getBusinessDate(date = new Date()): string {
+  const parts = new Intl.DateTimeFormat("en-CA", {
+    timeZone: "America/Bahia",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).formatToParts(date);
+  const values = Object.fromEntries(parts.map((part) => [part.type, part.value]));
+  return `${values.year}-${values.month}-${values.day}`;
+}
+
 function normalizeCoordinate(value: unknown, type: "lat" | "lon") {
   const parsed = typeof value === "number" ? value : typeof value === "string" ? Number(value) : Number.NaN;
   if (!Number.isFinite(parsed)) return null;
@@ -97,19 +108,26 @@ serve(async (req) => {
     }
 
     const callerId = claimsData.claims.sub as string;
+    const { data: callerProfile, error: callerProfileError } = await supabase
+      .from("profiles")
+      .select("active")
+      .eq("user_id", callerId)
+      .maybeSingle();
+    if (callerProfileError) throw callerProfileError;
+    if (!callerProfile?.active) {
+      return new Response(JSON.stringify({ success: false, error: "Conta desativada ou perfil ativo não encontrado" }), {
+        status: 403, headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
     const { data: adminRole, error: roleError } = await supabase
       .from("user_roles")
       .select("role")
       .eq("user_id", callerId)
       .eq("role", "admin")
       .maybeSingle();
-
-    if (roleError || !adminRole) {
-      return new Response(JSON.stringify({ success: false, error: "Forbidden" }), {
-        status: 403,
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
-      });
-    }
+    if (roleError) throw roleError;
+    const isAdmin = !!adminRole;
 
     const body = await req.json();
     const action = typeof body?.action === "string" ? body.action.trim() : "";
@@ -141,21 +159,35 @@ serve(async (req) => {
       );
     }
 
-    const { data: profile } = await supabase
-      .from("profiles")
-      .select("user_id, full_name, matricula")
-      .eq("user_id", user_id)
-      .single();
+    // A regular employee can register only their own point. The shared kiosk
+    // may choose another employee only with an active administrator session.
+    if (user_id !== callerId && !isAdmin) {
+      return new Response(JSON.stringify({ success: false, error: "Você só pode registrar o próprio ponto" }), {
+        status: 403, headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
 
+    const { data: profile, error: profileError } = await supabase
+      .from("profiles")
+      .select("user_id, full_name, matricula, active")
+      .eq("user_id", user_id)
+      .maybeSingle();
+
+    if (profileError) throw profileError;
     if (!profile) {
       return new Response(
         JSON.stringify({ success: false, error: "User not found" }),
         { status: 404, headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
     }
+    if (!profile.active) {
+      return new Response(JSON.stringify({ success: false, error: "Não é possível registrar ponto para uma conta desativada" }), {
+        status: 403, headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
 
     const now = new Date().toISOString();
-    const today = now.split("T")[0];
+    const today = getBusinessDate(new Date(now));
 
     const { data: existing } = await supabase
       .from("registros_ponto")
@@ -179,6 +211,11 @@ serve(async (req) => {
         terminal_id: terminal_id || "facial-terminal",
       }).select("*, nsr, hash_registro, horario_servidor, terminal_id").single();
 
+      if (error?.code === "23505") {
+        return new Response(JSON.stringify({ success: false, error: "Já existe um registro para hoje" }), {
+          status: 409, headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
       if (error) throw error;
 
       saveSession(supabase, {
@@ -214,10 +251,15 @@ serve(async (req) => {
       saida: "Saída",
     };
 
+    if (existing.saida) {
+      return new Response(JSON.stringify({ success: false, error: "A jornada já foi encerrada hoje" }), {
+        status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
     if ((existing as Record<string, unknown>)[action]) {
       return new Response(
         JSON.stringify({ success: false, error: `${actionLabels[action]} já registrada para hoje` }),
-        { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+        { status: 409, headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
     }
 
@@ -264,14 +306,25 @@ serve(async (req) => {
       }
     }
 
-    const { data, error } = await supabase
+    let updateQuery = supabase
       .from("registros_ponto")
       .update(updateData)
-      .eq("id", existing.id)
+      .eq("id", existing.id);
+    // Optimistic lock prevents concurrent punches from bypassing the sequence.
+    for (const column of ["entrada", "almoco_saida", "almoco_retorno", "saida"] as const) {
+      const currentValue = existing[column];
+      updateQuery = currentValue ? updateQuery.eq(column, currentValue) : updateQuery.is(column, null);
+    }
+    const { data, error } = await updateQuery
       .select("*, nsr, hash_registro, horario_servidor, terminal_id")
-      .single();
+      .maybeSingle();
 
     if (error) throw error;
+    if (!data) {
+      return new Response(JSON.stringify({ success: false, error: "A batida mudou em outra solicitação. Atualize a tela e tente novamente." }), {
+        status: 409, headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
 
     saveSession(supabase, {
       user_id, registro_ponto_id: data.id,
