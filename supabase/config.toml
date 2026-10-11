@@ -17,10 +17,10 @@ project_id = "pksbdcozttnqisskxsib"
 verify_jwt = true
 
 [functions.calcular-banco-horas]
-verify_jwt = false
+verify_jwt = true
 
 [functions.verificar-ausencias]
-verify_jwt = false
+verify_jwt = true
 
 [functions.gerenciar-configuracoes]
 verify_jwt = false
