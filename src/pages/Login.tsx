@@ -214,7 +214,7 @@ export default function Login() {
             transition={{ delay: 0.4 }}
             className="text-3xl font-extrabold tracking-tight"
           >
-            Controle de Jornada
+            Ponto Pro
           </motion.h1>
           <motion.p 
             initial={{ opacity: 0 }}
@@ -399,7 +399,14 @@ export default function Login() {
           </CardContent>
         </Card>
 
-        {/* Product/vendor branding footer intentionally hidden for all users. */}
+        <motion.p 
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          transition={{ delay: 0.8 }}
+          className="text-center mt-8 text-xs text-muted-foreground font-medium"
+        >
+          © {new Date().getFullYear()} Ponto Pro. Todos os direitos reservados.
+        </motion.p>
       </motion.div>
 
       <Dialog open={showForgot} onOpenChange={setShowForgot}>
