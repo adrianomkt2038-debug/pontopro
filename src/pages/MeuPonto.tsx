@@ -8,6 +8,7 @@ import { Badge } from "@/components/ui/badge";
 import { useToast } from "@/hooks/use-toast";
 import { attachStreamToVideoElement, getCameraErrorMessage, isEmbeddedContext, requestUserCameraStream } from "@/lib/camera";
 import { canRegisterPontoAction, getEdgeFunctionErrorMessage, getRequiredBrowserGeoPayload, type PontoAction, type PontoRegistro } from "@/lib/registroPonto";
+import { getBusinessDate } from "@/lib/businessDate";
 import {
   Camera,
   CheckCircle2,
@@ -104,7 +105,7 @@ export default function MeuPonto() {
         }
       }
 
-      const today = new Date().toISOString().split("T")[0];
+      const today = getBusinessDate();
       const { data: reg } = await supabase
         .from("registros_ponto")
         .select("entrada, almoco_saida, almoco_retorno, saida")
