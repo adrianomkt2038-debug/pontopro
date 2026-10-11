@@ -527,7 +527,7 @@ export default function RegistroPonto() {
 
             {/* Support Message */}
             <p className="text-[10px] text-muted-foreground/40 font-bold uppercase tracking-[0.2em] mt-8 text-center w-full">
-              Ponto Pro • v1.0 • afCode System Secure
+              Ponto Pro • v1.0 • Adriano Softwares Secure
             </p>
           </div>
         </div>
