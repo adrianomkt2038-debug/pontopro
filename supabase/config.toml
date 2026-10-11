@@ -11,10 +11,10 @@
 # Se fosse true, o Supabase exigiria token do Supabase Auth antes de executar.
 # =============================================
 
-project_id = "seu_project_id"
+project_id = "pksbdcozttnqisskxsib"
 
 [functions.registrar-ponto-facial]
-verify_jwt = false
+verify_jwt = true
 
 [functions.calcular-banco-horas]
 verify_jwt = false
