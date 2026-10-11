@@ -189,12 +189,13 @@ serve(async (req) => {
     const now = new Date().toISOString();
     const today = getBusinessDate(new Date(now));
 
-    const { data: existing } = await supabase
+    const { data: existing, error: existingError } = await supabase
       .from("registros_ponto")
       .select("*")
       .eq("user_id", user_id)
       .eq("data", today)
       .maybeSingle();
+    if (existingError) throw existingError;
 
     if (action === "entrada") {
       if (existing) {
