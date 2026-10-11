@@ -117,7 +117,24 @@ export default function Login() {
     if (error) {
       toast.error(error.message);
     } else {
-      navigate("/dashboard");
+      const { data: authData } = await supabase.auth.getUser();
+      if (!authData.user) {
+        await supabase.auth.signOut();
+        toast.error("Não foi possível validar sua sessão. Tente novamente.");
+      } else {
+        const { data: profile, error: profileError } = await supabase
+          .from("profiles")
+          .select("active")
+          .eq("user_id", authData.user.id)
+          .maybeSingle();
+
+        if (profileError || !profile?.active) {
+          await supabase.auth.signOut();
+          toast.error("Esta conta está desativada ou não possui um perfil ativo. Fale com o administrador.");
+        } else {
+          navigate("/dashboard");
+        }
+      }
     }
     setLoading(false);
   };
