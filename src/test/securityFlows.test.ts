@@ -1,6 +1,10 @@
 import { describe, expect, it } from "vitest";
 import { getBusinessDate } from "@/lib/businessDate";
-import { canRegisterPontoAction, type PontoRegistro } from "@/lib/registroPonto";
+import {
+  canRegisterPontoAction,
+  getBrowserGeolocationErrorMessage,
+  type PontoRegistro,
+} from "@/lib/registroPonto";
 
 describe("getBusinessDate", () => {
   it("uses the business time zone instead of the UTC date", () => {
@@ -45,5 +49,20 @@ describe("canRegisterPontoAction", () => {
     expect(canRegisterPontoAction("entrada", record)).toBe(false);
     expect(canRegisterPontoAction("almoco_saida", record)).toBe(false);
     expect(canRegisterPontoAction("saida", record)).toBe(false);
+  });
+});
+
+describe("getBrowserGeolocationErrorMessage", () => {
+  it("gives Chrome permission instructions for denied location", () => {
+    expect(getBrowserGeolocationErrorMessage(1)).toContain("Configurações do site");
+    expect(getBrowserGeolocationErrorMessage(1)).toContain("Localização > Permitir");
+  });
+
+  it("distinguishes unavailable position from permission denial", () => {
+    expect(getBrowserGeolocationErrorMessage(2)).toContain("não conseguiu determinar sua posição");
+  });
+
+  it("explains geolocation timeouts", () => {
+    expect(getBrowserGeolocationErrorMessage(3)).toContain("15 segundos");
   });
 });
