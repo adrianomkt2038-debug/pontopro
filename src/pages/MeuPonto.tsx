@@ -548,7 +548,7 @@ export default function MeuPonto() {
       </div>
 
       <p className="text-[10px] text-muted-foreground/40 font-bold uppercase tracking-[0.2em] text-center w-full">
-        Ponto Pro • v1.0 • afCode System Secure
+        Ponto Pro • v1.0 • Adriano Softwares Secure
       </p>
     </motion.div>
   );
