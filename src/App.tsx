@@ -29,9 +29,9 @@ import { Timer } from "lucide-react";
 
 const queryClient = new QueryClient();
 
-function ProtectedRoute({ children }: { children: React.ReactNode }) {
-  const { user, loading } = useAuth();
-  if (loading) {
+function ProtectedRoute({ children, adminOnly = false }: { children: React.ReactNode; adminOnly?: boolean }) {
+  const { user, loading, isAdmin, rolesLoaded } = useAuth();
+  if (loading || (adminOnly && !rolesLoaded)) {
     return (
       <div className="flex min-h-screen flex-col items-center justify-center bg-background relative overflow-hidden">
         {/* Animated Background Blobs */}
@@ -61,6 +61,7 @@ function ProtectedRoute({ children }: { children: React.ReactNode }) {
     );
   }
   if (!user) return <Navigate to="/login" replace />;
+  if (adminOnly && !isAdmin) return <Navigate to="/dashboard" replace />;
   return <AppLayout>{children}</AppLayout>;
 }
 
@@ -82,7 +83,7 @@ const App = () => (
             <Routes>
               <Route path="/login" element={<PublicRoute><Login /></PublicRoute>} />
               <Route path="/reset-password" element={<ResetPassword />} />
-              <Route path="/registro-ponto" element={<ProtectedRoute><RegistroPonto /></ProtectedRoute>} />
+              <Route path="/registro-ponto" element={<ProtectedRoute adminOnly><RegistroPonto /></ProtectedRoute>} />
               <Route path="/" element={<Navigate to="/dashboard" replace />} />
               <Route path="/dashboard" element={<ProtectedRoute><Dashboard /></ProtectedRoute>} />
               <Route path="/registros" element={<ProtectedRoute><Registros /></ProtectedRoute>} />
