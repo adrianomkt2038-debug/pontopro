@@ -12,6 +12,17 @@ function jsonResponse(body: Record<string, unknown>, status = 200) {
   });
 }
 
+function getBusinessDate(date = new Date()): string {
+  const parts = new Intl.DateTimeFormat("en-CA", {
+    timeZone: "America/Bahia",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).formatToParts(date);
+  const values = Object.fromEntries(parts.map((part) => [part.type, part.value]));
+  return `${values.year}-${values.month}-${values.day}`;
+}
+
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response(null, { headers: corsHeaders });
 
@@ -37,6 +48,14 @@ Deno.serve(async (req) => {
       if (claimsError || !claimsData?.claims) return jsonResponse({ success: false, error: "Unauthorized" }, 401);
 
       const userId = claimsData.claims.sub;
+      const { data: activeProfile, error: activeProfileError } = await supabaseAdmin
+        .from("profiles")
+        .select("active")
+        .eq("user_id", userId)
+        .maybeSingle();
+      if (activeProfileError) throw activeProfileError;
+      if (!activeProfile?.active) return jsonResponse({ success: false, error: "Conta desativada ou perfil ativo não encontrado" }, 403);
+
       const { data: roleData } = await supabaseAdmin
         .from("user_roles")
         .select("role")
@@ -50,9 +69,9 @@ Deno.serve(async (req) => {
     let targetDate: string;
     try {
       const body = await req.json();
-      targetDate = body.data || new Date().toISOString().split("T")[0];
+      targetDate = body.data || getBusinessDate();
     } catch {
-      targetDate = new Date().toISOString().split("T")[0];
+      targetDate = getBusinessDate();
     }
 
     // Get tolerance settings
