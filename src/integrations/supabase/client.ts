@@ -5,7 +5,7 @@ import type { Database } from './types';
 const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL || "https://pksbdcozttnqisskxsib.supabase.co";
 // Public client key fallback lets builds work before hosting env vars are configured.
 // This is an anon/publishable key, not a service_role/secret key; RLS remains required.
-const SUPABASE_PUBLISHABLE_KEY = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY || "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InBrc2JkY296dHRucWlzc2t4c2liIiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTE2NjY1MjAsImV4cCI6MjEwNzI0MjUyMH0.-zr2eNLAcw6Py1bCg9jA4MkVygvA8q_wT4ycDcwpGp0";
+const SUPABASE_PUBLISHABLE_KEY = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY || "sb_publishable_NVQ_EicvdmvETvp_Z5Uc8A_4ZuyOT-_";
 
 // Import the supabase client like this:
 // import { supabase } from "@/integrations/supabase/client";
