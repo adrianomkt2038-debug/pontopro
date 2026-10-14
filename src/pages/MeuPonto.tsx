@@ -55,6 +55,7 @@ export default function MeuPonto() {
   const [allowedBatidas, setAllowedBatidas] = useState<string[]>(["entrada", "almoco_saida", "almoco_retorno", "saida"]);
   const [todayRegistro, setTodayRegistro] = useState<TodayRegistro | null>(null);
   const [loadingBatidas, setLoadingBatidas] = useState(false);
+  const [pontoImage, setPontoImage] = useState<File | null>(null);
 
   // Clock
   useEffect(() => {
@@ -257,20 +258,33 @@ export default function MeuPonto() {
 
   const registerPonto = useCallback(
     async (action: ActionType) => {
-      if (!user || !verified || !livenessData) return;
+      if (!user) return;
       setRegistering(true);
 
       try {
         const geoPayload = await getRequiredBrowserGeoPayload();
+        let comprovantePath: string | null = null;
+
+        if (pontoImage) {
+          const extension = pontoImage.type === "image/png" ? "png"
+            : pontoImage.type === "image/webp" ? "webp" : "jpg";
+          comprovantePath = `${user.id}/${Date.now()}-${action}.${extension}`;
+          const { error: uploadError } = await supabase.storage
+            .from("ponto-comprovantes")
+            .upload(comprovantePath, pontoImage, {
+              contentType: pontoImage.type,
+              upsert: false,
+            });
+          if (uploadError) throw new Error(`Não foi possível enviar a imagem: ${uploadError.message}`);
+        }
 
         const { data, error } = await supabase.functions.invoke("registrar-ponto-facial", {
           body: {
+            intent: "manual_clock_action",
             action,
             user_id: user.id,
             user_agent: navigator.userAgent,
-            face_descriptor: livenessData.descriptor,
-            liveness_challenge_id: livenessData.challengeId,
-            liveness_proof: livenessData.proof,
+            comprovante_path: comprovantePath,
             ...geoPayload,
           },
         });
@@ -293,6 +307,7 @@ export default function MeuPonto() {
         await loadUserBatidas();
         setVerified(false);
         setLivenessData(null);
+        setPontoImage(null);
       } catch (err) {
         const message = await getEdgeFunctionErrorMessage(err);
         toast({ title: "Erro", description: message, variant: "destructive" });
@@ -300,7 +315,7 @@ export default function MeuPonto() {
         setRegistering(false);
       }
     },
-    [user, verified, livenessData, toast]
+    [user, pontoImage, toast]
   );
 
   const actionButtons: { action: ActionType; label: string; icon: React.ElementType; color: string; gradient: string }[] = [
@@ -328,8 +343,8 @@ export default function MeuPonto() {
     >
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
-          <h1 className="text-3xl font-extrabold tracking-tight">Registro Facial</h1>
-          <p className="text-muted-foreground font-medium mt-1">Confirme sua identidade para bater o ponto</p>
+          <h1 className="text-3xl font-extrabold tracking-tight">Meu Ponto</h1>
+          <p className="text-muted-foreground font-medium mt-1">Registre seu horário com sua conta e localização, sem verificação facial.</p>
         </div>
         <div className="flex items-center gap-3 bg-card px-5 py-3 rounded-2xl shadow-soft border border-border/50">
           <div className="h-10 w-10 rounded-xl bg-primary/10 flex items-center justify-center">
@@ -349,227 +364,66 @@ export default function MeuPonto() {
       </div>
 
       <div className="grid gap-6 lg:grid-cols-12">
-        {/* Camera verification area */}
         <Card className="lg:col-span-12 border-none shadow-premium glass-card overflow-hidden">
           <CardHeader className="pb-3 px-6 pt-6">
             <CardTitle className="flex items-center gap-2.5 text-lg font-bold">
-              <ScanFace className="h-5 w-5 text-primary" />
-              Verificação em Tempo Real
+              <Clock className="h-5 w-5 text-primary" />
+              Registrar Ponto
             </CardTitle>
           </CardHeader>
           <CardContent className="space-y-6 px-6 pb-6">
-            {!modelsLoading && modelsError && (
-              <div className="space-y-3 rounded-2xl border border-destructive/30 bg-destructive/5 p-4">
-                <div className="flex items-start gap-2 text-destructive">
-                  <AlertTriangle className="mt-0.5 h-5 w-5 shrink-0" />
-                  <p className="text-sm">{modelsError}</p>
-                </div>
-                <Button variant="outline" onClick={retryModels} className="w-full gap-2">
-                  <RefreshCw className="h-4 w-4" />
-                  Tentar carregar modelos novamente
-                </Button>
-              </div>
-            )}
-
-            {!myDescriptor && !modelsLoading && !modelsError && (
-              <div className="flex items-center gap-3 p-5 rounded-2xl bg-amber-500/10 text-amber-600 border border-amber-500/20">
-                <AlertTriangle className="h-6 w-6 shrink-0" />
-                <div>
-                  <p className="font-bold text-sm">Cadastro Facial Pendente</p>
-                  <p className="text-xs opacity-80">Você não possui um perfil facial cadastrado. Contate o RH.</p>
-                </div>
-              </div>
-            )}
-
-            {modelsLoading && (
-              <div className="flex flex-col items-center justify-center gap-4 py-16 text-muted-foreground">
-                <div className="relative">
-                  <Loader2 className="h-10 w-10 animate-spin text-primary/40" />
-                  <ScanFace className="h-6 w-6 absolute inset-0 m-auto text-primary" />
-                </div>
-                <div className="text-center">
-                  <p className="font-bold text-foreground">Iniciando Biometria</p>
-                  <p className="text-xs">Preparando modelos de visão computacional...</p>
-                </div>
-              </div>
-            )}
-
-            {!cameraActive && !modelsLoading && !modelsError && myDescriptor && (
-              <div className="flex flex-col items-center justify-center gap-6 py-12 rounded-2xl border-2 border-dashed border-muted animate-in fade-in zoom-in duration-500">
-                <div className="h-24 w-24 rounded-full bg-accent/20 flex items-center justify-center group cursor-pointer" onClick={startCamera}>
-                  <Camera className="h-10 w-10 text-muted-foreground group-hover:text-primary transition-colors" />
-                </div>
-                <div className="text-center space-y-2">
-                  <h3 className="font-bold text-lg">Pronto para Registrar?</h3>
-                  <p className="text-sm text-muted-foreground max-w-[240px] mx-auto">
-                    O scanner iniciará automaticamente após ativar a câmera.
-                  </p>
-                </div>
-                <Button size="lg" onClick={startCamera} className="gap-2 rounded-2xl h-14 px-10 shadow-premium bg-primary hover:bg-primary/90 text-base font-bold">
-                  <Fingerprint className="h-5 w-5" />
-                  Registrar Ponto
-                </Button>
-              </div>
-            )}
-
-            {cameraActive && (
-              <motion.div 
-                initial={{ opacity: 0, scale: 0.98 }}
-                animate={{ opacity: 1, scale: 1 }}
-                className="space-y-6"
-              >
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-6 items-start">
-                  <div className="relative rounded-3xl overflow-hidden bg-black aspect-square shadow-inner-premium border border-white/10 group">
-                    <video
-                      ref={videoRef}
-                      autoPlay
-                      playsInline
-                      muted
-                      className="w-full h-full object-cover"
-                      style={{ transform: "scaleX(-1)" }}
-                    />
-                    <canvas ref={canvasRef} className="absolute inset-0 w-full h-full" />
-                    
-                    {/* Scanning Overlay */}
-                    <AnimatePresence>
-                      {scanning && (
-                        <motion.div 
-                          initial={{ opacity: 0 }}
-                          animate={{ opacity: 1 }}
-                          exit={{ opacity: 0 }}
-                          className="absolute inset-0 bg-black/60 backdrop-blur-[2px] flex flex-col items-center justify-center p-8 text-center"
-                        >
-                          <div className="relative mb-4">
-                            <div className="absolute inset-0 rounded-full bg-primary/20 animate-ping" />
-                            <div className="h-16 w-16 rounded-full bg-primary flex items-center justify-center relative shadow-lg shadow-primary/40">
-                              <ScanFace className="h-8 w-8 text-primary-foreground" />
-                            </div>
-                          </div>
-                          <p className="text-white font-black tracking-tight text-lg">Verificação facial segura</p>
-                          <p className="text-white/70 text-xs mt-1">{livenessPrompt}</p>
-                          
-                          <div className="absolute top-0 left-0 w-full h-2 bg-gradient-to-r from-transparent via-primary to-transparent animate-scan-beam" />
-                        </motion.div>
-                      )}
-                    </AnimatePresence>
-
-                    {livenessBlocked && cameraActive && (
-                      <div className="absolute inset-0 z-30 flex flex-col items-center justify-center gap-4 bg-black/75 p-6 text-center">
-                        <p className="max-w-sm text-sm font-semibold text-white">{livenessPrompt}</p>
-                        <Button
-                          type="button"
-                          className="gap-2"
-                          onClick={() => setLivenessBlocked(false)}
-                        >
-                          <RefreshCw className="h-4 w-4" />
-                          Tentar novamente
-                        </Button>
-                      </div>
-                    )}
-
-                    {/* Corner Accents */}
-                    <div className="absolute top-6 left-6 w-8 h-8 border-t-4 border-l-4 border-primary/50 rounded-tl-xl z-20" />
-                    <div className="absolute top-6 right-6 w-8 h-8 border-t-4 border-r-4 border-primary/50 rounded-tr-xl z-20" />
-                    <div className="absolute bottom-6 left-6 w-8 h-8 border-b-4 border-l-4 border-primary/50 rounded-bl-xl z-20" />
-                    <div className="absolute bottom-6 right-6 w-8 h-8 border-b-4 border-r-4 border-primary/50 rounded-br-xl z-20" />
-                    
-                    {!verified && !scanning && (
-                      <div className="absolute bottom-6 left-1/2 -translate-x-1/2 bg-black/40 backdrop-blur-md px-4 py-2 rounded-full border border-white/10 z-20">
-                        <p className="text-[10px] text-white font-bold uppercase tracking-widest flex items-center gap-2">
-                          <Loader2 className="h-3 w-3 animate-spin text-primary" />
-                          Scanner em execução...
-                        </p>
-                      </div>
-                    )}
-                  </div>
-
-                  <div className="space-y-6 lg:mt-0">
-                    {/* Verified Status Card */}
-                    <AnimatePresence mode="wait">
-                      {verified ? (
-                        <motion.div 
-                          initial={{ opacity: 0, x: 20 }}
-                          animate={{ opacity: 1, x: 0 }}
-                          className="flex flex-col gap-4 p-6 rounded-3xl bg-emerald-500/10 border border-emerald-500/20 shadow-soft"
-                        >
-                          <div className="flex items-center gap-4">
-                            <div className="h-14 w-14 rounded-2xl bg-emerald-500 flex items-center justify-center shrink-0 shadow-lg shadow-emerald-500/40">
-                              <Check className="h-8 w-8 text-white" />
-                            </div>
-                            <div className="flex-1 min-w-0">
-                              <p className="font-black text-xl text-foreground tracking-tight leading-none truncate">{profile?.full_name}</p>
-                              <p className="text-xs text-emerald-600 font-bold uppercase tracking-widest mt-1">Identidade Confirmada</p>
-                            </div>
-                          </div>
-
-                          <div className="bg-white/5 rounded-2xl p-4 border border-white/5">
-                            <h4 className="text-xs font-black uppercase tracking-widest text-muted-foreground mb-3">Selecione uma ação:</h4>
-                            <div className="grid grid-cols-2 gap-2">
-                              {actionButtons
-                                .filter((btn) => allowedBatidas.includes(btn.action))
-                                .map((btn) => {
-                                  const alreadyRegistered = todayRegistro ? !!todayRegistro[btn.action as keyof TodayRegistro] : false;
-                                  const canRegister = canRegisterPontoAction(btn.action, todayRegistro);
-
-                                  return (
-                                    <motion.button
-                                      key={btn.action}
-                                      whileHover={!alreadyRegistered && verified && canRegister ? { scale: 1.05 } : {}}
-                                      whileTap={!alreadyRegistered && verified && canRegister ? { scale: 0.95 } : {}}
-                                      disabled={registering || alreadyRegistered || !verified || !canRegister}
-                                      onClick={() => registerPonto(btn.action)}
-                                      className={`
-                                        relative h-24 flex flex-col items-center justify-center gap-2 rounded-2xl transition-all duration-300
-                                        ${alreadyRegistered 
-                                          ? "bg-muted cursor-default opacity-40" 
-                                          : (verified && canRegister)
-                                            ? `bg-gradient-to-br ${btn.gradient} text-white shadow-lg shadow-${btn.color.split('-')[1]}-500/20`
-                                            : "bg-muted text-muted-foreground opacity-20 cursor-not-allowed"
-                                        }
-                                      `}
-                                    >
-                                      <btn.icon className="h-5 w-5" />
-                                      <span className="text-[10px] font-black uppercase tracking-tight text-center px-1">
-                                        {btn.label}
-                                      </span>
-                                    </motion.button>
-                                  );
-                                })}
-                            </div>
-                          </div>
-                        </motion.div>
-                      ) : (
-                        <motion.div 
-                          initial={{ opacity: 0 }}
-                          animate={{ opacity: 1 }}
-                          className="flex flex-col items-center justify-center gap-4 py-20 text-center bg-accent/5 rounded-3xl border border-dashed border-border"
-                        >
-                          <div className="h-16 w-16 rounded-2xl bg-muted/20 flex items-center justify-center">
-                            <ScanFace className="h-8 w-8 text-muted-foreground/40" />
-                          </div>
-                          <div>
-                            <p className="font-bold text-muted-foreground">Aguardando Scanner</p>
-                            <p className="text-xs text-muted-foreground/60 max-w-[200px] mt-1 italic">
-                              Enquadre seu rosto para liberar as opções de registro.
-                            </p>
-                          </div>
-                        </motion.div>
-                      )}
-                    </AnimatePresence>
-
-                    <motion.button 
-                      whileHover={{ scale: 1.02, backgroundColor: "rgba(239, 68, 68, 0.1)" }}
-                      whileTap={{ scale: 0.98 }}
-                      onClick={stopCamera} 
-                      className="w-full rounded-2xl h-14 flex items-center justify-center gap-2 bg-white/5 hover:text-red-500 backdrop-blur-md border border-white/10 text-muted-foreground font-black uppercase tracking-[0.2em] text-[10px] transition-all"
+            <p className="text-sm text-muted-foreground">
+              Selecione a batida correspondente. A conta autenticada, a localização e a sequência dos horários continuam sendo verificadas.
+            </p>
+            <div className="space-y-2">
+              <label htmlFor="ponto-image" className="text-sm font-semibold">Enviar imagem (opcional)</label>
+              <input
+                key={pontoImage?.name || "empty"}
+                id="ponto-image"
+                type="file"
+                accept="image/jpeg,image/png,image/webp"
+                className="block w-full rounded-xl border border-border bg-background px-3 py-3 text-sm file:mr-3 file:rounded-md file:border-0 file:bg-primary file:px-3 file:py-2 file:font-semibold file:text-primary-foreground"
+                onChange={(event) => {
+                  const file = event.currentTarget.files?.[0] ?? null;
+                  if (file && (!["image/jpeg", "image/png", "image/webp"].includes(file.type) || file.size > 8 * 1024 * 1024)) {
+                    toast({ title: "Imagem inválida", description: "Envie JPG, PNG ou WEBP de até 8 MB.", variant: "destructive" });
+                    event.currentTarget.value = "";
+                    setPontoImage(null);
+                    return;
+                  }
+                  setPontoImage(file);
+                }}
+              />
+              {pontoImage && <p className="text-xs text-muted-foreground">Imagem anexada: {pontoImage.name}</p>}
+            </div>
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+              {actionButtons
+                .filter((btn) => allowedBatidas.includes(btn.action))
+                .map((btn) => {
+                  const alreadyRegistered = todayRegistro ? !!todayRegistro[btn.action as keyof TodayRegistro] : false;
+                  const canRegister = canRegisterPontoAction(btn.action, todayRegistro);
+                  return (
+                    <motion.button
+                      key={btn.action}
+                      whileHover={!alreadyRegistered && canRegister ? { scale: 1.03 } : {}}
+                      whileTap={!alreadyRegistered && canRegister ? { scale: 0.97 } : {}}
+                      disabled={registering || loadingBatidas || alreadyRegistered || !canRegister || !user}
+                      onClick={() => registerPonto(btn.action)}
+                      className={`relative min-h-24 flex flex-col items-center justify-center gap-2 rounded-2xl transition-all duration-300 ${
+                        alreadyRegistered
+                          ? "bg-muted cursor-default opacity-40"
+                          : canRegister
+                            ? `bg-gradient-to-br ${btn.gradient} text-white shadow-lg`
+                            : "bg-muted text-muted-foreground opacity-40 cursor-not-allowed"
+                      }`}
                     >
-                      <X className="h-4 w-4" />
-                      Encerrar Sessão
+                      {registering ? <Loader2 className="h-5 w-5 animate-spin" /> : <btn.icon className="h-5 w-5" />}
+                      <span className="text-xs font-black uppercase tracking-tight text-center px-1">{alreadyRegistered ? `${btn.label} ✓` : btn.label}</span>
                     </motion.button>
-                  </div>
-                </div>
-              </motion.div>
-            )}
+                  );
+                })}
+            </div>
+            {loadingBatidas && <p className="text-xs text-muted-foreground">Carregando os registros de hoje...</p>}
           </CardContent>
         </Card>
 
