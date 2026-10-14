@@ -115,7 +115,6 @@ async function detectOneLiveFace(video: HTMLVideoElement): Promise<FaceSignal | 
 
 async function nextFaceSignal(video: HTMLVideoElement, deadline: number): Promise<FaceSignal | null> {
   while (performance.now() < deadline) {
-    if (Date.now() >= deadline + (Date.now() - performance.now())) break;
     const stream = video.srcObject;
     const liveVideoTrack = stream instanceof MediaStream
       ? stream.getVideoTracks().some((track) => track.readyState === "live")
