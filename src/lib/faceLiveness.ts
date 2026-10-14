@@ -77,14 +77,28 @@ async function pause(ms: number): Promise<void> {
 interface FaceSignal {
   ear: number;
   yaw: number;
-  descriptor: number[];
+}
+
+/** Avoid instanceof MediaStream because camera objects may cross iframe realms. */
+export function hasLiveVideoTrack(source: unknown): boolean {
+  if (!source || typeof source !== "object") return false;
+  const candidate = source as { getVideoTracks?: () => Array<{ readyState?: string }> };
+  if (typeof candidate.getVideoTracks !== "function") return false;
+  try {
+    return candidate.getVideoTracks().some((track) => track?.readyState === "live");
+  } catch {
+    return false;
+  }
 }
 
 async function detectOneLiveFace(video: HTMLVideoElement): Promise<FaceSignal | null> {
+  if (video.readyState < 2 || video.videoWidth < 1 || video.videoHeight < 1) return null;
+
+  // Landmarks alone are substantially cheaper than computing a 128-value
+  // recognition descriptor on every frame of the liveness challenge.
   const results = await faceapi
     .detectAllFaces(video, DETECTION_OPTIONS)
-    .withFaceLandmarks()
-    .withFaceDescriptors();
+    .withFaceLandmarks();
 
   // Fail closed if the frame has zero or multiple faces.
   if (results.length !== 1) return null;
@@ -106,20 +120,12 @@ async function detectOneLiveFace(video: HTMLVideoElement): Promise<FaceSignal | 
   // The preview is mirrored for the employee, so invert the raw image direction.
   const yaw = -(nose.x - eyeMidpointX) / eyeDistance;
 
-  return {
-    ear,
-    yaw,
-    descriptor: Array.from(results[0].descriptor),
-  };
+  return { ear, yaw };
 }
 
 async function nextFaceSignal(video: HTMLVideoElement, deadline: number): Promise<FaceSignal | null> {
   while (performance.now() < deadline) {
-    const stream = video.srcObject;
-    const liveVideoTrack = stream instanceof MediaStream
-      ? stream.getVideoTracks().some((track) => track.readyState === "live")
-      : false;
-    if (!liveVideoTrack) {
+    if (!hasLiveVideoTrack(video.srcObject)) {
       throw new Error("A prova de vida exige uma câmera ativa. Fotos enviadas não são aceitas.");
     }
 
@@ -166,8 +172,7 @@ export async function runFaceLiveness(
   }
 
   // Camera input must be a live MediaStream, never a file or a still image.
-  if (!(video.srcObject instanceof MediaStream)
-    || !video.srcObject.getVideoTracks().some((track) => track.readyState === "live")) {
+  if (!hasLiveVideoTrack(video.srcObject)) {
     throw new Error("Ative a câmera para fazer a prova de vida. Fotos enviadas não são aceitas.");
   }
 
@@ -263,9 +268,36 @@ export async function runFaceLiveness(
     throw new Error("A prova de vida não foi validada. Tente novamente.");
   }
 
+  // Compute the recognition descriptor only once, after the live challenge.
+  // Retry briefly to tolerate one or two dropped camera frames on slower devices.
+  onPrompt("Confirmando a identidade facial...");
+  const descriptorDeadline = performance.now() + 5000;
+  let finalDescriptor: number[] | null = null;
+  while (performance.now() < descriptorDeadline) {
+    if (Date.now() >= expiresAt) throw new Error("O desafio facial expirou. Inicie novamente.");
+    if (!hasLiveVideoTrack(video.srcObject)) {
+      throw new Error("A câmera foi desconectada. Reative a câmera e tente novamente.");
+    }
+    if (video.readyState >= 2 && video.videoWidth > 0 && video.videoHeight > 0) {
+      const results = await faceapi
+        .detectAllFaces(video, DETECTION_OPTIONS)
+        .withFaceLandmarks()
+        .withFaceDescriptors();
+      if (results.length === 1 && results[0].descriptor.length === 128) {
+        finalDescriptor = Array.from(results[0].descriptor);
+        break;
+      }
+    }
+    await pause(180);
+  }
+
+  if (!finalDescriptor) {
+    throw new Error("A prova de vida foi feita, mas não foi possível confirmar o rosto no último quadro. Centralize o rosto e tente novamente.");
+  }
+
   onPrompt("Prova de vida concluída");
   return {
-    descriptor: lastSignal.descriptor,
+    descriptor: finalDescriptor,
     proof: { completedSteps, durationMs },
   };
 }
