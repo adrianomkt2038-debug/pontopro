@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { getBusinessDate } from "@/lib/businessDate";
+import { shouldShowFolhaProButton } from "@/lib/folhaProVisibility";
 import {
   canRegisterPontoAction,
   getBrowserGeolocationErrorMessage,
@@ -64,5 +65,23 @@ describe("getBrowserGeolocationErrorMessage", () => {
 
   it("explains geolocation timeouts", () => {
     expect(getBrowserGeolocationErrorMessage(3)).toContain("15 segundos");
+  });
+});
+
+
+describe("shouldShowFolhaProButton", () => {
+  it("always shows the button to administrators, regardless of the manager setting", () => {
+    expect(shouldShowFolhaProButton({ isAdmin: true, isGestor: false, showToManagers: false })).toBe(true);
+    expect(shouldShowFolhaProButton({ isAdmin: true, isGestor: false, showToManagers: true })).toBe(true);
+  });
+
+  it("shows the button to managers only when enabled by an administrator", () => {
+    expect(shouldShowFolhaProButton({ isAdmin: false, isGestor: true, showToManagers: true })).toBe(true);
+    expect(shouldShowFolhaProButton({ isAdmin: false, isGestor: true, showToManagers: false })).toBe(false);
+  });
+
+  it("never shows the button to collaborators", () => {
+    expect(shouldShowFolhaProButton({ isAdmin: false, isGestor: false, showToManagers: true })).toBe(false);
+    expect(shouldShowFolhaProButton({ isAdmin: false, isGestor: false, showToManagers: false })).toBe(false);
   });
 });

@@ -24,6 +24,7 @@ const LABELS: Record<string, { label: string; icon: typeof Settings; group: stri
   tempo_sessao_minutos: { label: "Tempo de Sessão (minutos)", icon: Clock, group: "Sistema" },
   notificar_admin_novo_cadastro: { label: "Notificar Admin em Novo Cadastro", icon: Bell, group: "Notificações" },
   folha_pro_url: { label: "Link externo do Folha Pro", icon: ExternalLink, group: "Integrações" },
+  folha_pro_visivel_gestores: { label: "Exibir botão Folha Pro para gestores", icon: ExternalLink, group: "Integrações" },
 };
 
 export default function Configuracoes() {

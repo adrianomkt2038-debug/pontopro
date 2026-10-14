@@ -62,15 +62,17 @@ Deno.serve(async (req: Request) => {
       );
     }
 
-    const { data: setting, error: settingError } = await supabaseAdmin
+    const { data: settings, error: settingError } = await supabaseAdmin
       .from("configuracoes_sistema")
-      .select("valor")
-      .eq("chave", "folha_pro_url")
-      .maybeSingle();
+      .select("chave, valor")
+      .in("chave", ["folha_pro_url", "folha_pro_visivel_gestores"]);
 
     if (settingError) throw settingError;
 
-    const candidate = String(setting?.valor || "").trim();
+    const linkSetting = (settings || []).find((item) => item.chave === "folha_pro_url");
+    const visibilitySetting = (settings || []).find((item) => item.chave === "folha_pro_visivel_gestores");
+    const visibleForGestores = visibilitySetting ? visibilitySetting.valor === "true" : true;
+    const candidate = String(linkSetting?.valor || "").trim();
     let url = "";
     if (candidate) {
       try {
@@ -84,7 +86,7 @@ Deno.serve(async (req: Request) => {
     }
 
     return new Response(
-      JSON.stringify({ success: true, data: { url } }),
+      JSON.stringify({ success: true, data: { url, visibleForGestores } }),
       { headers: { ...corsHeaders, "Content-Type": "application/json" } }
     );
   } catch (error) {

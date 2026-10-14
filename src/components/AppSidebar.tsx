@@ -37,6 +37,7 @@ import {
 } from "@/components/ui/sidebar";
 import { Separator } from "@/components/ui/separator";
 import { toast } from "sonner";
+import { shouldShowFolhaProButton } from "@/lib/folhaProVisibility";
 
 // Items visible to gestor and admin
 const mainItems = [
@@ -74,6 +75,7 @@ export function AppSidebar() {
   const isColaborador = !isAdmin && !isGestor;
   const [alertCount, setAlertCount] = useState(0);
   const [folhaProUrl, setFolhaProUrl] = useState("");
+  const [folhaProVisibleForGestores, setFolhaProVisibleForGestores] = useState(false);
 
   useEffect(() => {
     if (!user) return;
@@ -98,6 +100,7 @@ export function AppSidebar() {
   useEffect(() => {
     if (!user) {
       setFolhaProUrl("");
+      setFolhaProVisibleForGestores(false);
       return;
     }
 
@@ -122,10 +125,16 @@ export function AppSidebar() {
           }
         }
 
-        if (mounted) setFolhaProUrl(safeUrl);
+        if (mounted) {
+          setFolhaProUrl(safeUrl);
+          setFolhaProVisibleForGestores(data?.data?.visibleForGestores === true);
+        }
       } catch (error) {
         console.error("Erro ao carregar o link do Folha Pro:", error);
-        if (mounted) setFolhaProUrl("");
+        if (mounted) {
+          setFolhaProUrl("");
+          setFolhaProVisibleForGestores(false);
+        }
       }
     };
 
@@ -138,7 +147,11 @@ export function AppSidebar() {
   }, [user]);
 
   const isActive = (path: string) => location.pathname === path;
-
+  const showFolhaPro = shouldShowFolhaProButton({
+    isAdmin,
+    isGestor,
+    showToManagers: folhaProVisibleForGestores,
+  });
 
   return (
     <Sidebar collapsible="icon" className="border-r border-sidebar-border/30 bg-sidebar shadow-premium">
@@ -220,6 +233,7 @@ export function AppSidebar() {
                   </SidebarMenuItem>
                 );
               })}
+              {showFolhaPro && (
               <SidebarMenuItem className={collapsed ? "flex justify-center w-full" : ""}>
                 <SidebarMenuButton
                   asChild
@@ -256,6 +270,7 @@ export function AppSidebar() {
                   </a>
                 </SidebarMenuButton>
               </SidebarMenuItem>
+              )}
             </SidebarMenu>
           </SidebarGroupContent>
         </SidebarGroup>
