@@ -184,8 +184,7 @@ export default function MeuPonto() {
   const scanFace = useCallback(async () => {
     if (!videoRef.current || !modelsLoaded || !myDescriptor || !user || livenessBlocked) return;
 
-    let livenessStarted = false;
-    let mustRestartCamera = false;
+    let preserveFailureState = false;
     setScanning(true);
     setVerified(false);
     setLivenessData(null);
@@ -204,7 +203,6 @@ export default function MeuPonto() {
       if (distance < 0.6) {
         setLivenessPrompt("Solicitando desafio aleatório de prova de vida...");
         // Stop the automatic scanner even when the challenge endpoint fails or rate-limits.
-        livenessStarted = true;
         const pendingChallenge = livenessChallengeRef.current;
         const challenge = pendingChallenge && !isFaceLivenessChallengeExpired(pendingChallenge)
           ? pendingChallenge
@@ -226,23 +224,24 @@ export default function MeuPonto() {
         setVerified(true);
         toast({ title: "Identidade e prova de vida confirmadas!", description: `Olá, ${profile?.full_name || "colaborador"}!` });
       } else {
+        preserveFailureState = true;
+        setLivenessBlocked(true);
+        setLivenessPrompt("Rosto não reconhecido. Confira se sua face está cadastrada e tente novamente.");
         toast({
-          title: "Não reconhecido",
-          description: "O rosto detectado não corresponde à biometria cadastrada.",
+          title: "Rosto não reconhecido",
+          description: "A imagem não corresponde à biometria cadastrada. Você pode tentar novamente sem fechar a câmera.",
           variant: "destructive",
         });
       }
     } catch (err) {
       console.error("Face scan/liveness error:", err);
-      if (livenessStarted) {
-        mustRestartCamera = true;
-        setLivenessBlocked(true);
-        const failureMessage = err instanceof Error ? err.message : "";
-        const rateLimited = /muitas tentativas|aguarde um minuto/i.test(failureMessage);
-        setLivenessPrompt(rateLimited
-          ? "Limite temporário de tentativas. Aguarde um minuto e reinicie a câmera."
-          : (failureMessage || "Prova de vida não concluída. Feche a câmera e inicie novamente."));
-      }
+      preserveFailureState = true;
+      setLivenessBlocked(true);
+      const failureMessage = err instanceof Error ? err.message : "";
+      const rateLimited = /muitas tentativas|aguarde um minuto/i.test(failureMessage);
+      setLivenessPrompt(rateLimited
+        ? "Limite temporário de tentativas. Aguarde um minuto antes de tentar novamente."
+        : (failureMessage || "Não foi possível verificar o rosto. Confira a câmera e tente novamente."));
       toast({
         title: "Verificação facial não concluída",
         description: err instanceof Error ? err.message : "Não foi possível validar a prova de vida. Tente novamente.",
@@ -250,7 +249,7 @@ export default function MeuPonto() {
       });
     } finally {
       setScanning(false);
-      if (!mustRestartCamera) setLivenessPrompt("Mantenha o rosto centralizado");
+      if (!preserveFailureState) setLivenessPrompt("Mantenha o rosto centralizado");
     }
   }, [modelsLoaded, myDescriptor, detectFace, compareFaces, toast, profile, user, livenessBlocked]);
 
