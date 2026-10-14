@@ -72,6 +72,29 @@ export function calculateEyeAspectRatio(points: readonly Point[]): number {
   return (verticalA + verticalB) / (2 * horizontal);
 }
 
+/**
+ * Blink thresholds are relative to each person's open-eye baseline. Absolute
+ * cutoffs fail for naturally narrow eyes and can make reopening impossible.
+ */
+export function calculateBlinkThresholds(baselineOpenEar: number) {
+  if (!Number.isFinite(baselineOpenEar) || baselineOpenEar <= 0) {
+    return { closed: 0, reopened: 0 };
+  }
+  return {
+    closed: baselineOpenEar * 0.70,
+    reopened: baselineOpenEar * 0.88,
+  };
+}
+
+export function isHeadTurnDetected(step: FaceLivenessStep, yawDelta: number): boolean {
+  if (step === "blink" || !Number.isFinite(yawDelta)) return false;
+  return step === "turn_left" ? yawDelta < -0.04 : yawDelta > 0.04;
+}
+
+export function isHeadBackAtCenter(yawDelta: number): boolean {
+  return Number.isFinite(yawDelta) && Math.abs(yawDelta) < 0.03;
+}
+
 async function pause(ms: number): Promise<void> {
   await new Promise<void>((resolve) => window.setTimeout(resolve, ms));
 }
@@ -210,8 +233,8 @@ export async function runFaceLiveness(
   const baselineYaw = sortedYaw[Math.floor(sortedYaw.length / 2)];
   const sortedEar = [...baselineEarSamples].sort((a, b) => a - b);
   const baselineOpenEar = sortedEar[Math.floor(sortedEar.length / 2)];
-  const closedEyeThreshold = baselineOpenEar * 0.70;
-  const reopenedEyeThreshold = baselineOpenEar * 0.88;
+  const { closed: closedEyeThreshold, reopened: reopenedEyeThreshold } =
+    calculateBlinkThresholds(baselineOpenEar);
   const completedSteps: FaceLivenessStep[] = [];
 
   for (const step of challenge.steps) {
@@ -237,7 +260,7 @@ export async function runFaceLiveness(
         }
       } else {
         const delta = signal.yaw - baselineYaw;
-        const movedCorrectly = step === "turn_left" ? delta < -0.04 : delta > 0.04;
+        const movedCorrectly = isHeadTurnDetected(step, delta);
 
         if (!movementStarted) {
           movedFrames = movedCorrectly ? movedFrames + 1 : 0;
@@ -246,7 +269,7 @@ export async function runFaceLiveness(
             onPrompt("Movimento detectado. Volte a olhar para a câmera");
           }
         } else {
-          returnedFrames = Math.abs(delta) < 0.03 ? returnedFrames + 1 : 0;
+          returnedFrames = isHeadBackAtCenter(delta) ? returnedFrames + 1 : 0;
           if (returnedFrames >= 2) {
             verifiedSignal = signal;
             break;
