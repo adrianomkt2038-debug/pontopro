@@ -35,7 +35,7 @@ const ALL_STEPS: FaceLivenessStep[] = ["blink", "turn_left", "turn_right"];
 const DETECTION_OPTIONS = new faceapi.TinyFaceDetectorOptions({
   // Match the main scanner's input scale while keeping a practical confidence threshold.
   inputSize: 416,
-  scoreThreshold: 0.4,
+  scoreThreshold: 0.35,
 });
 
 export function getLivenessStepLabel(step: FaceLivenessStep): string {
