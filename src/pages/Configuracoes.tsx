@@ -117,12 +117,20 @@ export default function Configuracoes() {
         </div>
         <div className="flex items-center gap-2 shrink-0">
           {config.tipo === "boolean" && (
-            <Switch
-              checked={value === "true"}
-              onCheckedChange={(checked) =>
-                handleChange(config.chave, checked ? "true" : "false")
-              }
-            />
+            <div className="flex items-center gap-2">
+              {config.chave === "folha_pro_visivel_gestores" && (
+                <span className="text-xs font-semibold text-muted-foreground">
+                  {value === "true" ? "Sim" : "Não"}
+                </span>
+              )}
+              <Switch
+                checked={value === "true"}
+                onCheckedChange={(checked) =>
+                  handleChange(config.chave, checked ? "true" : "false")
+                }
+                aria-label={meta.label}
+              />
+            </div>
           )}
           {config.tipo === "url" && (
             <Input
