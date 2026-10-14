@@ -15,6 +15,7 @@ import {
   Settings,
   History,
   UserCircle,
+  ExternalLink,
 } from "lucide-react";
 import { NavLink } from "@/components/NavLink";
 import { useLocation } from "react-router-dom";
@@ -35,6 +36,7 @@ import {
   useSidebar,
 } from "@/components/ui/sidebar";
 import { Separator } from "@/components/ui/separator";
+import { toast } from "sonner";
 
 // Items visible to gestor and admin
 const mainItems = [
@@ -71,6 +73,7 @@ export function AppSidebar() {
   const { isAdmin, isGestor, user } = useAuth();
   const isColaborador = !isAdmin && !isGestor;
   const [alertCount, setAlertCount] = useState(0);
+  const [folhaProUrl, setFolhaProUrl] = useState("");
 
   useEffect(() => {
     if (!user) return;
@@ -89,6 +92,50 @@ export function AppSidebar() {
     const interval = setInterval(fetchAlertCount, 300000);
     return () => clearInterval(interval);
   }, [user, isAdmin]);
+
+  // Read only the public external URL; editing it remains restricted to admins.
+  // Refresh periodically so a URL change in the admin panel reaches open sessions.
+  useEffect(() => {
+    if (!user) {
+      setFolhaProUrl("");
+      return;
+    }
+
+    let mounted = true;
+    const fetchFolhaProUrl = async () => {
+      try {
+        const { data, error } = await supabase.functions.invoke("obter-link-folha-pro", {
+          body: {},
+        });
+        if (error) throw error;
+
+        const candidate = typeof data?.data?.url === "string" ? data.data.url.trim() : "";
+        let safeUrl = "";
+        if (candidate) {
+          try {
+            const parsed = new URL(candidate);
+            if (parsed.protocol === "https:" && parsed.hostname && !parsed.username && !parsed.password) {
+              safeUrl = parsed.toString();
+            }
+          } catch {
+            // Ignore malformed URL values; the admin can correct them in settings.
+          }
+        }
+
+        if (mounted) setFolhaProUrl(safeUrl);
+      } catch (error) {
+        console.error("Erro ao carregar o link do Folha Pro:", error);
+        if (mounted) setFolhaProUrl("");
+      }
+    };
+
+    void fetchFolhaProUrl();
+    const refreshId = window.setInterval(() => void fetchFolhaProUrl(), 60000);
+    return () => {
+      mounted = false;
+      window.clearInterval(refreshId);
+    };
+  }, [user]);
 
   const isActive = (path: string) => location.pathname === path;
 
@@ -173,6 +220,42 @@ export function AppSidebar() {
                   </SidebarMenuItem>
                 );
               })}
+              <SidebarMenuItem className={collapsed ? "flex justify-center w-full" : ""}>
+                <SidebarMenuButton
+                  asChild
+                  tooltip="Folha Pro"
+                  size="lg"
+                  className="transition-all duration-300"
+                >
+                  <a
+                    href={folhaProUrl || "#"}
+                    target={folhaProUrl ? "_blank" : undefined}
+                    rel={folhaProUrl ? "noopener noreferrer" : undefined}
+                    aria-label={folhaProUrl ? "Abrir Folha Pro em nova aba" : "Folha Pro sem link configurado"}
+                    onClick={(event) => {
+                      if (!folhaProUrl) {
+                        event.preventDefault();
+                        toast.error("O administrador ainda não configurou o endereço do Folha Pro.");
+                      }
+                    }}
+                    className={`relative flex items-center text-sidebar-foreground transition-all duration-300 hover:text-sidebar-accent-foreground ${
+                      collapsed
+                        ? "justify-center rounded-xl hover:bg-sidebar-accent/50 p-0"
+                        : "gap-3.5 px-4 py-3 rounded-2xl hover:bg-sidebar-accent group"
+                    }`}
+                  >
+                    <ExternalLink className={`h-[18px] w-[18px] shrink-0 transition-transform duration-300 ${!collapsed && "group-hover:scale-110 group-hover:rotate-3"}`} />
+                    {!collapsed && (
+                      <div className="min-w-0 flex-1">
+                        <span className="text-sm tracking-tight">Folha Pro</span>
+                        <p className="text-[10px] opacity-40 leading-tight font-medium mt-0.5">
+                          {folhaProUrl ? "Abrir sistema externo" : "Link não configurado"}
+                        </p>
+                      </div>
+                    )}
+                  </a>
+                </SidebarMenuButton>
+              </SidebarMenuItem>
             </SidebarMenu>
           </SidebarGroupContent>
         </SidebarGroup>

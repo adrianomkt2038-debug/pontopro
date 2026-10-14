@@ -100,6 +100,21 @@ Deno.serve(async (req) => {
         );
       }
 
+      const valorPersistido = chave === "folha_pro_url" ? String(valor).trim() : String(valor);
+      if (chave === "folha_pro_url" && valorPersistido !== "") {
+        try {
+          const parsedUrl = new URL(valorPersistido);
+          if (parsedUrl.protocol !== "https:" || !parsedUrl.hostname || parsedUrl.username || parsedUrl.password) {
+            throw new Error("invalid-url");
+          }
+        } catch {
+          return new Response(
+            JSON.stringify({ success: false, error: "Informe um endereço HTTPS válido para o Folha Pro." }),
+            { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+          );
+        }
+      }
+
       const { data: existing } = await supabaseAdmin
         .from("configuracoes_sistema")
         .select("id, tipo, valor")
@@ -141,7 +156,7 @@ Deno.serve(async (req) => {
 
       const { error } = await supabaseAdmin
         .from("configuracoes_sistema")
-        .update({ valor: String(valor) })
+        .update({ valor: valorPersistido })
         .eq("chave", chave);
 
       if (error) throw error;
@@ -151,11 +166,11 @@ Deno.serve(async (req) => {
         user_id: userId,
         chave,
         valor_anterior: valorAnterior,
-        valor_novo: String(valor),
+        valor_novo: valorPersistido,
       });
 
       return new Response(
-        JSON.stringify({ success: true, data: { chave, valor: String(valor) } }),
+        JSON.stringify({ success: true, data: { chave, valor: valorPersistido } }),
         { headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
     }

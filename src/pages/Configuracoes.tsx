@@ -5,7 +5,7 @@ import { Input } from "@/components/ui/input";
 import { Switch } from "@/components/ui/switch";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { supabase } from "@/integrations/supabase/client";
-import { Settings, Shield, UserPlus, Mail, Clock, Bell, RefreshCw, Save } from "lucide-react";
+import { Settings, Shield, UserPlus, Mail, Clock, Bell, RefreshCw, Save, ExternalLink } from "lucide-react";
 import { toast } from "sonner";
 
 interface ConfigItem {
@@ -23,6 +23,7 @@ const LABELS: Record<string, { label: string; icon: typeof Settings; group: stri
   permitir_registro_sem_escala: { label: "Registro de Ponto sem Escala", icon: Clock, group: "Ponto" },
   tempo_sessao_minutos: { label: "Tempo de Sessão (minutos)", icon: Clock, group: "Sistema" },
   notificar_admin_novo_cadastro: { label: "Notificar Admin em Novo Cadastro", icon: Bell, group: "Notificações" },
+  folha_pro_url: { label: "Link externo do Folha Pro", icon: ExternalLink, group: "Integrações" },
 };
 
 export default function Configuracoes() {
@@ -122,6 +123,15 @@ export default function Configuracoes() {
               }
             />
           )}
+          {config.tipo === "url" && (
+            <Input
+              type="url"
+              className="w-[min(70vw,20rem)]"
+              placeholder="https://exemplo.com"
+              value={value}
+              onChange={(e) => handleChange(config.chave, e.target.value)}
+            />
+          )}
           {config.tipo === "number" && (
             <Input
               type="number"
@@ -193,6 +203,7 @@ export default function Configuracoes() {
                 {group === "Ponto" && "Regras para registro de ponto"}
                 {group === "Sistema" && "Configurações gerais do sistema"}
                 {group === "Notificações" && "Alertas e notificações automáticas"}
+                {group === "Integrações" && "Links externos usados pelos botões da barra lateral"}
               </CardDescription>
             </CardHeader>
             <CardContent>
