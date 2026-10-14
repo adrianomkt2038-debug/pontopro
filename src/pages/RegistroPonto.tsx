@@ -394,6 +394,12 @@ export default function RegistroPonto() {
                   </CardTitle>
                 </CardHeader>
                 <CardContent className="px-6 pb-6 flex-1 flex flex-col">
+                  {modelsLoading && (
+                    <div className="mb-4 flex items-center justify-center gap-3 rounded-2xl border border-primary/20 bg-primary/5 p-4 text-muted-foreground">
+                      <Loader2 className="h-5 w-5 animate-spin text-primary" />
+                      <span className="text-sm">Carregando os modelos faciais para iniciar o scanner...</span>
+                    </div>
+                  )}
                   {!modelsLoading && modelsError && (
                     <div className="mb-4 space-y-3 rounded-2xl border border-destructive/30 bg-destructive/5 p-4">
                       <div className="flex items-start gap-2 text-destructive">
