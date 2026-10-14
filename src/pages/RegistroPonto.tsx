@@ -485,6 +485,22 @@ export default function RegistroPonto() {
                           )}
                         </AnimatePresence>
 
+                        {livenessBlocked && cameraActive && (
+                          <div className="absolute inset-0 z-30 flex flex-col items-center justify-center gap-4 bg-black/75 p-6 text-center">
+                            <p className="max-w-sm text-sm font-semibold text-white">{livenessPrompt}</p>
+                            {!/limite temporário/i.test(livenessPrompt) && (
+                              <Button
+                                type="button"
+                                className="gap-2"
+                                onClick={() => setLivenessBlocked(false)}
+                              >
+                                <RefreshCw className="h-4 w-4" />
+                                Tentar novamente
+                              </Button>
+                            )}
+                          </div>
+                        )}
+
                         {/* Corner Accents */}
                         <div className="absolute top-6 left-6 w-10 h-10 border-t-4 border-l-4 border-primary/50 rounded-tl-2xl z-20" />
                         <div className="absolute top-6 right-6 w-10 h-10 border-t-4 border-r-4 border-primary/50 rounded-tr-2xl z-20" />
