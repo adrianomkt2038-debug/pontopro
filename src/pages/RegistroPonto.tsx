@@ -24,7 +24,8 @@ import {
   X,
   Zap,
   Check,
-  Fingerprint
+  Fingerprint,
+  RefreshCw
 } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 
@@ -44,7 +45,7 @@ export default function RegistroPonto() {
   const videoRef = useRef<HTMLVideoElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const streamRef = useRef<MediaStream | null>(null);
-  const { modelsLoaded, loading: modelsLoading, error: modelsError, detectFace, compareFaces } = useFaceApi();
+  const { modelsLoaded, loading: modelsLoading, error: modelsError, retryModels, detectFace, compareFaces } = useFaceApi();
   const { toast } = useToast();
 
   const [cameraActive, setCameraActive] = useState(false);
@@ -393,7 +394,19 @@ export default function RegistroPonto() {
                   </CardTitle>
                 </CardHeader>
                 <CardContent className="px-6 pb-6 flex-1 flex flex-col">
-                  {!cameraActive && (
+                  {!modelsLoading && modelsError && (
+                    <div className="mb-4 space-y-3 rounded-2xl border border-destructive/30 bg-destructive/5 p-4">
+                      <div className="flex items-start gap-2 text-destructive">
+                        <AlertTriangle className="mt-0.5 h-5 w-5 shrink-0" />
+                        <p className="text-sm">{modelsError}</p>
+                      </div>
+                      <Button variant="outline" onClick={retryModels} className="w-full gap-2">
+                        <RefreshCw className="h-4 w-4" />
+                        Tentar carregar modelos novamente
+                      </Button>
+                    </div>
+                  )}
+                  {!cameraActive && !modelsError && !modelsLoading && (
                     <div className="flex flex-col items-center justify-center gap-6 py-12 rounded-3xl border-2 border-dashed border-muted animate-in fade-in zoom-in duration-500 flex-1">
                       <div className="h-24 w-24 rounded-full bg-accent/20 flex items-center justify-center group cursor-pointer" onClick={startCamera}>
                         <Camera className="h-10 w-10 text-muted-foreground group-hover:text-primary transition-colors" />
