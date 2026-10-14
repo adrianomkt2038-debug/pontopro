@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect, useCallback } from "react";
 import { useFaceApi } from "@/hooks/useFaceApi";
-import { issueFaceLivenessChallenge, runFaceLiveness, type FaceLivenessChallenge, type FaceLivenessProof } from "@/lib/faceLiveness";
+import { issueFaceLivenessChallenge, isFaceLivenessChallengeExpired, runFaceLiveness, type FaceLivenessChallenge, type FaceLivenessProof } from "@/lib/faceLiveness";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
 import { Button } from "@/components/ui/button";
@@ -206,7 +206,7 @@ export default function MeuPonto() {
         // Stop the automatic scanner even when the challenge endpoint fails or rate-limits.
         livenessStarted = true;
         const pendingChallenge = livenessChallengeRef.current;
-        const challenge = pendingChallenge && Date.parse(pendingChallenge.expiresAt) > Date.now()
+        const challenge = pendingChallenge && !isFaceLivenessChallengeExpired(pendingChallenge)
           ? pendingChallenge
           : await issueFaceLivenessChallenge(user.id, "clock_in");
         livenessChallengeRef.current = challenge;
