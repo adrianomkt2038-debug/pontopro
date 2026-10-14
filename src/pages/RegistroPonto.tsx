@@ -220,7 +220,7 @@ export default function RegistroPonto() {
         const rateLimited = /muitas tentativas|aguarde um minuto/i.test(failureMessage);
         setLivenessPrompt(rateLimited
           ? "Limite temporário de tentativas. Aguarde um minuto e reinicie a câmera."
-          : "Prova de vida não concluída. Feche a câmera e inicie novamente.");
+          : (failureMessage || "Prova de vida não concluída. Feche a câmera e inicie novamente."));
       }
       toast({
         title: "Verificação facial não concluída",
