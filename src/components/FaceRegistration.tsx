@@ -106,8 +106,12 @@ export function FaceRegistration({ userId, userName, onRegistered }: FaceRegistr
           setSuccess(false);
         }, 1500);
       } catch (err) {
-        console.error(err);
-        toast({ title: "Erro", description: "Falha ao salvar dados faciais", variant: "destructive" });
+        console.error("Face descriptor save failed:", err);
+        toast({
+          title: "Erro ao salvar o cadastro facial",
+          description: err instanceof Error ? err.message : "Falha ao salvar os dados faciais. Tente novamente.",
+          variant: "destructive",
+        });
       }
     },
     [userId, userName, toast, stopCamera, onRegistered]
