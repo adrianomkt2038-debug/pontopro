@@ -14,18 +14,21 @@ import {
 } from "@/lib/faceLiveness";
 
 describe("face liveness verification helpers", () => {
-  const validOrder = ["turn_left", "blink", "turn_right"] as const;
+  const validOrder = ["turn_left", "blink"] as const;
 
-  it("accepts only a complete, unique three-step challenge", () => {
+  it("accepts a randomized blink plus one unique head-turn action", () => {
     expect(isValidLivenessSteps([...validOrder])).toBe(true);
-    expect(isValidLivenessSteps(["blink", "blink", "turn_right"])).toBe(false);
-    expect(isValidLivenessSteps(["blink", "turn_left"])).toBe(false);
+    expect(isValidLivenessSteps(["blink", "turn_right"])).toBe(true);
+    expect(isValidLivenessSteps(["blink", "blink"])).toBe(false);
+    expect(isValidLivenessSteps(["turn_left", "turn_right"])).toBe(false);
+    expect(isValidLivenessSteps(["turn_left"])).toBe(false);
+    expect(isValidLivenessSteps(["blink", "turn_left", "turn_right"])).toBe(false);
   });
 
   it("requires the exact server-issued step order", () => {
     expect(areLivenessStepsComplete(validOrder, [...validOrder])).toBe(true);
-    expect(areLivenessStepsComplete(validOrder, ["blink", "turn_left", "turn_right"])).toBe(false);
-    expect(areLivenessStepsComplete(validOrder, ["turn_left", "blink"])).toBe(false);
+    expect(areLivenessStepsComplete(validOrder, ["blink", "turn_left"])).toBe(false);
+    expect(areLivenessStepsComplete(validOrder, ["turn_left"])).toBe(false);
   });
 
   it("rejects implausible proof durations", () => {
