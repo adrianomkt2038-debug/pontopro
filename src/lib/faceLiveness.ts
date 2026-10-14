@@ -25,8 +25,8 @@ type Point = { x: number; y: number };
 
 const STEP_LABELS: Record<FaceLivenessStep, string> = {
   blink: "Pisque os olhos e depois abra-os",
-  turn_left: "Vire a cabeça para a esquerda e volte ao centro",
-  turn_right: "Vire a cabeça para a direita e volte ao centro",
+  turn_left: "Vire a cabeça para um lado e volte ao centro",
+  turn_right: "Vire a cabeça para o lado oposto e volte ao centro",
 };
 
 const ALL_STEPS: FaceLivenessStep[] = ["blink", "turn_left", "turn_right"];
@@ -86,9 +86,19 @@ export function calculateBlinkThresholds(baselineOpenEar: number) {
   };
 }
 
-export function isHeadTurnDetected(step: FaceLivenessStep, yawDelta: number): boolean {
-  if (step === "blink" || !Number.isFinite(yawDelta)) return false;
-  return step === "turn_left" ? yawDelta < -0.04 : yawDelta > 0.04;
+export type HeadTurnDirection = -1 | 1;
+
+export function getHeadTurnDirection(yawDelta: number): HeadTurnDirection | null {
+  if (!Number.isFinite(yawDelta)) return null;
+  if (yawDelta < -0.04) return -1;
+  if (yawDelta > 0.04) return 1;
+  return null;
+}
+
+/** The first turn can be either direction; the second must reverse it. */
+export function isHeadTurnDetected(yawDelta: number, firstDirection: HeadTurnDirection | null): boolean {
+  const direction = getHeadTurnDirection(yawDelta);
+  return direction !== null && (firstDirection === null || direction === -firstDirection);
 }
 
 export function isHeadBackAtCenter(yawDelta: number): boolean {
@@ -236,15 +246,23 @@ export async function runFaceLiveness(
   const { closed: closedEyeThreshold, reopened: reopenedEyeThreshold } =
     calculateBlinkThresholds(baselineOpenEar);
   const completedSteps: FaceLivenessStep[] = [];
+  // Infer the first turn from the actual camera coordinates, then require the
+  // opposite movement. This avoids left/right mirror and device-orientation issues.
+  let firstTurnDirection: HeadTurnDirection | null = null;
 
   for (const step of challenge.steps) {
-    onPrompt(STEP_LABELS[step]);
+    onPrompt(step === "blink"
+      ? STEP_LABELS.blink
+      : firstTurnDirection === null
+        ? "Vire a cabeça para um lado e volte ao centro"
+        : "Agora vire a cabeça para o lado oposto e volte ao centro");
     const stepDeadline = performance.now() + 15000;
     let blinkClosed = false;
     let movedFrames = 0;
     let returnedFrames = 0;
     let movementStarted = false;
     let verifiedSignal: FaceSignal | null = null;
+    let detectedTurnDirection: HeadTurnDirection | null = null;
 
     while (performance.now() < stepDeadline) {
       if (Date.now() >= expiresAt) throw new Error("O desafio facial expirou. Inicie novamente.");
@@ -260,13 +278,15 @@ export async function runFaceLiveness(
         }
       } else {
         const delta = signal.yaw - baselineYaw;
-        const movedCorrectly = isHeadTurnDetected(step, delta);
+        const direction = getHeadTurnDirection(delta);
+        const movedCorrectly = step !== "blink" && isHeadTurnDetected(delta, firstTurnDirection);
 
         if (!movementStarted) {
           movedFrames = movedCorrectly ? movedFrames + 1 : 0;
           if (movedFrames >= 2) {
             movementStarted = true;
-            onPrompt("Movimento detectado. Volte a olhar para a câmera");
+            detectedTurnDirection = direction;
+            onPrompt("Movimento detectado. Volte a olhar para o centro");
           }
         } else {
           returnedFrames = isHeadBackAtCenter(delta) ? returnedFrames + 1 : 0;
@@ -286,6 +306,9 @@ export async function runFaceLiveness(
     }
 
     completedSteps.push(step);
+    if (step !== "blink" && firstTurnDirection === null && detectedTurnDirection !== null) {
+      firstTurnDirection = detectedTurnDirection;
+    }
     lastSignal = verifiedSignal;
     onPrompt(`Etapa ${completedSteps.length} de ${challenge.steps.length} confirmada`);
     await pause(180);
