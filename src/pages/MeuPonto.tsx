@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect, useCallback } from "react";
 import { useFaceApi } from "@/hooks/useFaceApi";
-import { issueFaceLivenessChallenge, runFaceLiveness, type FaceLivenessProof } from "@/lib/faceLiveness";
+import { issueFaceLivenessChallenge, runFaceLiveness, type FaceLivenessChallenge, type FaceLivenessProof } from "@/lib/faceLiveness";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
 import { Button } from "@/components/ui/button";
@@ -36,6 +36,8 @@ export default function MeuPonto() {
   const videoRef = useRef<HTMLVideoElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const streamRef = useRef<MediaStream | null>(null);
+  // Reuse an unexpired challenge after a failed client-side liveness step.
+  const livenessChallengeRef = useRef<FaceLivenessChallenge | null>(null);
   const { modelsLoaded, loading: modelsLoading, error: modelsError, retryModels, detectFace, compareFaces } = useFaceApi();
   const { toast } = useToast();
   const { user, profile } = useAuth();
@@ -203,12 +205,18 @@ export default function MeuPonto() {
         setLivenessPrompt("Solicitando desafio aleatório de prova de vida...");
         // Stop the automatic scanner even when the challenge endpoint fails or rate-limits.
         livenessStarted = true;
-        const challenge = await issueFaceLivenessChallenge(user.id, "clock_in");
+        const pendingChallenge = livenessChallengeRef.current;
+        const challenge = pendingChallenge && Date.parse(pendingChallenge.expiresAt) > Date.now()
+          ? pendingChallenge
+          : await issueFaceLivenessChallenge(user.id, "clock_in");
+        livenessChallengeRef.current = challenge;
         const liveness = await runFaceLiveness(videoRef.current, challenge, setLivenessPrompt);
         const verifiedDistance = compareFaces(liveness.descriptor, myDescriptor);
         if (verifiedDistance >= 0.6) {
+          livenessChallengeRef.current = null;
           throw new Error("O rosto mudou durante a prova de vida. Posicione-se novamente na câmera.");
         }
+        livenessChallengeRef.current = null;
 
         setLivenessData({
           descriptor: liveness.descriptor,
