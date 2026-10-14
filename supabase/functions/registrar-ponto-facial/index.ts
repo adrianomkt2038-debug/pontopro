@@ -238,7 +238,7 @@ serve(async (req) => {
       && Number.isSafeInteger(proofDuration);
 
     if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(challengeId) || !validProof) {
-      return new Response(JSON.stringify({ success: false, error: "Prova de vida obrigatória. Inicie a verificação novamente." }),
+      return new Response(JSON.stringify({ success: false, error: "Prova de vida obrigatória. Inicie a verificação novamente." }), {
         status: 403, headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
