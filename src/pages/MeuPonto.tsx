@@ -44,6 +44,7 @@ export default function MeuPonto() {
   const [verified, setVerified] = useState(false);
   const [livenessData, setLivenessData] = useState<{ descriptor: number[]; challengeId: string; proof: FaceLivenessProof } | null>(null);
   const [livenessPrompt, setLivenessPrompt] = useState("Mantenha o rosto centralizado");
+  const [livenessBlocked, setLivenessBlocked] = useState(false);
   const [registering, setRegistering] = useState(false);
   const [currentTime, setCurrentTime] = useState(new Date());
   const [lastAction, setLastAction] = useState<{ action: string; time: string } | null>(null);
@@ -126,6 +127,8 @@ export default function MeuPonto() {
 
   const startCamera = useCallback(async () => {
     try {
+      setLivenessBlocked(false);
+      setLivenessPrompt("Mantenha o rosto centralizado");
       const stream = await requestUserCameraStream();
       streamRef.current = stream;
       setCameraActive(true);
@@ -176,8 +179,10 @@ export default function MeuPonto() {
   }, [cameraActive, toast]);
 
   const scanFace = useCallback(async () => {
-    if (!videoRef.current || !modelsLoaded || !myDescriptor || !user) return;
+    if (!videoRef.current || !modelsLoaded || !myDescriptor || !user || livenessBlocked) return;
 
+    let livenessStarted = false;
+    let mustRestartCamera = false;
     setScanning(true);
     setVerified(false);
     setLivenessData(null);
@@ -195,6 +200,7 @@ export default function MeuPonto() {
 
       if (distance < 0.6) {
         setLivenessPrompt("Solicitando desafio aleatório de prova de vida...");
+        livenessStarted = true;
         const challenge = await issueFaceLivenessChallenge(user.id, "clock_in");
         const liveness = await runFaceLiveness(videoRef.current, challenge, setLivenessPrompt);
         const verifiedDistance = compareFaces(liveness.descriptor, myDescriptor);
@@ -218,6 +224,11 @@ export default function MeuPonto() {
       }
     } catch (err) {
       console.error("Face scan/liveness error:", err);
+      if (livenessStarted) {
+        mustRestartCamera = true;
+        setLivenessBlocked(true);
+        setLivenessPrompt("Prova de vida não concluída. Feche a câmera e inicie novamente.");
+      }
       toast({
         title: "Verificação facial não concluída",
         description: err instanceof Error ? err.message : "Não foi possível validar a prova de vida. Tente novamente.",
@@ -225,9 +236,9 @@ export default function MeuPonto() {
       });
     } finally {
       setScanning(false);
-      setLivenessPrompt("Mantenha o rosto centralizado");
+      if (!mustRestartCamera) setLivenessPrompt("Mantenha o rosto centralizado");
     }
-  }, [modelsLoaded, myDescriptor, detectFace, compareFaces, toast, profile, user]);
+  }, [modelsLoaded, myDescriptor, detectFace, compareFaces, toast, profile, user, livenessBlocked]);
 
   const registerPonto = useCallback(
     async (action: ActionType) => {
@@ -286,13 +297,13 @@ export default function MeuPonto() {
 
   // Auto-scan logic when camera is activated
   useEffect(() => {
-    if (cameraActive && modelsLoaded && myDescriptor && !verified && !scanning) {
+    if (cameraActive && modelsLoaded && myDescriptor && !verified && !scanning && !livenessBlocked) {
       const timer = setTimeout(() => {
         scanFace();
       }, 1500);
       return () => clearTimeout(timer);
     }
-  }, [cameraActive, modelsLoaded, myDescriptor, verified, scanning, scanFace]);
+  }, [cameraActive, modelsLoaded, myDescriptor, verified, scanning, scanFace, livenessBlocked]);
 
   return (
     <motion.div 
