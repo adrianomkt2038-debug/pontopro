@@ -109,11 +109,7 @@ export function FaceRegistration({ userId, userName, onRegistered }: FaceRegistr
         }, 1500);
       } catch (err) {
         console.error("Face descriptor save failed:", err);
-        toast({
-          title: "Erro ao salvar o cadastro facial",
-          description: err instanceof Error ? err.message : "Falha ao salvar os dados faciais. Tente novamente.",
-          variant: "destructive",
-        });
+        throw err;
       }
     },
     [userId, userName, toast, stopCamera, onRegistered]
@@ -121,6 +117,7 @@ export function FaceRegistration({ userId, userName, onRegistered }: FaceRegistr
 
   const captureFromCamera = useCallback(async () => {
     if (!videoRef.current || !modelsLoaded || processing) return;
+    let preserveFailurePrompt = false;
     setProcessing(true);
 
     try {
@@ -137,14 +134,17 @@ export function FaceRegistration({ userId, userName, onRegistered }: FaceRegistr
       await saveDescriptor(result.descriptor, challenge.id, result.proof);
     } catch (err) {
       console.error("Face enrollment liveness failed:", err);
+      preserveFailurePrompt = true;
+      const message = err instanceof Error ? err.message : "Não foi possível validar a prova de vida. Tente novamente.";
+      setLivenessPrompt(message);
       toast({
         title: "Cadastro não concluído",
-        description: err instanceof Error ? err.message : "Não foi possível validar a prova de vida. Tente novamente.",
+        description: message,
         variant: "destructive",
       });
     } finally {
       setProcessing(false);
-      setLivenessPrompt("Posicione o rosto na câmera");
+      if (!preserveFailurePrompt) setLivenessPrompt("Posicione o rosto na câmera");
     }
   }, [modelsLoaded, processing, userId, saveDescriptor, toast]);
 
