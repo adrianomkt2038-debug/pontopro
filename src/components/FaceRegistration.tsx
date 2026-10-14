@@ -5,7 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { useToast } from "@/hooks/use-toast";
 import { attachStreamToVideoElement, getCameraErrorMessage, isEmbeddedContext, requestUserCameraStream } from "@/lib/camera";
-import { Camera, Loader2, ScanFace, CheckCircle2 } from "lucide-react";
+import { Camera, Loader2, ScanFace, CheckCircle2, AlertTriangle, RefreshCw } from "lucide-react";
 import { invokeEntityAction } from "@/lib/invokeEntityAction";
 
 interface FaceRegistrationProps {
@@ -17,7 +17,7 @@ interface FaceRegistrationProps {
 export function FaceRegistration({ userId, userName, onRegistered }: FaceRegistrationProps) {
   const videoRef = useRef<HTMLVideoElement>(null);
   const streamRef = useRef<MediaStream | null>(null);
-  const { modelsLoaded, loading: modelsLoading } = useFaceApi();
+  const { modelsLoaded, loading: modelsLoading, error: modelsError, retryModels } = useFaceApi();
   const { toast } = useToast();
 
   const [open, setOpen] = useState(false);
@@ -159,6 +159,19 @@ export function FaceRegistration({ userId, userName, onRegistered }: FaceRegistr
             <div className="flex items-center justify-center gap-2 py-8 text-muted-foreground">
               <Loader2 className="h-5 w-5 animate-spin" />
               Carregando modelos...
+            </div>
+          )}
+
+          {!modelsLoading && modelsError && (
+            <div className="space-y-3 rounded-xl border border-destructive/30 bg-destructive/5 p-4">
+              <div className="flex items-start gap-2 text-destructive">
+                <AlertTriangle className="mt-0.5 h-5 w-5 shrink-0" />
+                <p className="text-sm">{modelsError}</p>
+              </div>
+              <Button variant="outline" onClick={retryModels} className="w-full gap-2">
+                <RefreshCw className="h-4 w-4" />
+                Tentar carregar novamente
+              </Button>
             </div>
           )}
 
