@@ -207,6 +207,7 @@ serve(async (req) => {
         .from("face_liveness_challenges")
         .select("id", { count: "exact", head: true })
         .eq("user_id", user_id)
+        .eq("purpose", purpose)
         .gt("created_at", recentWindow);
       if (rateLimitError) throw rateLimitError;
       if ((recentChallenges ?? 0) >= 5) {
