@@ -8,6 +8,7 @@ import {
   hasLiveVideoTrack,
   isHeadBackAtCenter,
   isHeadTurnDetected,
+  isFaceLivenessChallengeExpired,
   isPlausibleLivenessDuration,
   isValidLivenessSteps,
 } from "@/lib/faceLiveness";
@@ -32,6 +33,17 @@ describe("face liveness verification helpers", () => {
     expect(isPlausibleLivenessDuration(1000)).toBe(false);
     expect(isPlausibleLivenessDuration(121000)).toBe(false);
     expect(isPlausibleLivenessDuration("5000")).toBe(false);
+  });
+
+  it("uses monotonic deadlines for challenge validity regardless of device clock", () => {
+    expect(isFaceLivenessChallengeExpired({
+      expiresAt: "invalid-but-ignored-by-monotonic-deadline",
+      clientDeadline: performance.now() + 1000,
+    })).toBe(false);
+    expect(isFaceLivenessChallengeExpired({
+      expiresAt: "invalid-but-ignored-by-monotonic-deadline",
+      clientDeadline: performance.now() - 1,
+    })).toBe(true);
   });
 
 
