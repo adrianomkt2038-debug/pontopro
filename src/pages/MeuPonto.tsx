@@ -193,7 +193,9 @@ export default function MeuPonto() {
     try {
       const detection = await detectFace(videoRef.current);
       if (!detection) {
-        setLivenessPrompt("Não foi detectado um rosto. Centralize-se na câmera.");
+        preserveFailureState = true;
+        setLivenessBlocked(true);
+        setLivenessPrompt("Não consegui identificar seu rosto nesta imagem. Posicione o rosto de frente, aproxime-se um pouco da câmera e tente novamente.");
         return;
       }
 
