@@ -201,8 +201,8 @@ export default function MeuPonto() {
 
       if (distance < 0.6) {
         setLivenessPrompt("Solicitando desafio aleatório de prova de vida...");
-        livenessStarted = true;
         const challenge = await issueFaceLivenessChallenge(user.id, "clock_in");
+        livenessStarted = true;
         const liveness = await runFaceLiveness(videoRef.current, challenge, setLivenessPrompt);
         const verifiedDistance = compareFaces(liveness.descriptor, myDescriptor);
         if (verifiedDistance >= 0.6) {
