@@ -1,5 +1,6 @@
 import { useState, useRef, useEffect, useCallback } from "react";
 import { useFaceApi } from "@/hooks/useFaceApi";
+import { issueFaceLivenessChallenge, runFaceLiveness, type FaceLivenessProof } from "@/lib/faceLiveness";
 import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -34,6 +35,9 @@ interface MatchedUser {
   user_id: string;
   full_name: string;
   distance: number;
+  faceDescriptor: number[];
+  livenessChallengeId: string;
+  livenessProof: FaceLivenessProof;
 }
 
 export default function RegistroPonto() {
@@ -46,6 +50,7 @@ export default function RegistroPonto() {
   const [cameraActive, setCameraActive] = useState(false);
   const [scanning, setScanning] = useState(false);
   const [matchedUser, setMatchedUser] = useState<MatchedUser | null>(null);
+  const [livenessPrompt, setLivenessPrompt] = useState("Mantenha o rosto centralizado");
   const [registering, setRegistering] = useState(false);
   const [currentTime, setCurrentTime] = useState(new Date());
   const [lastAction, setLastAction] = useState<{ action: string; time: string; name: string } | null>(null);
@@ -109,6 +114,7 @@ export default function RegistroPonto() {
     }
     setCameraActive(false);
     setMatchedUser(null);
+    setLivenessPrompt("Mantenha o rosto centralizado");
   }, []);
 
   useEffect(() => {
@@ -139,38 +145,64 @@ export default function RegistroPonto() {
 
     setScanning(true);
     setMatchedUser(null);
+    setLivenessPrompt("Identificando o rosto...");
 
     try {
       const detection = await detectFace(videoRef.current);
       if (!detection) {
-        setScanning(false);
+        setLivenessPrompt("Não foi detectado um rosto. Centralize-se na câmera.");
         return;
       }
 
       const currentDescriptor = Array.from(detection.descriptor);
-      let bestMatch: MatchedUser | null = null;
+      let bestMatch: { user_id: string; full_name: string; distance: number; descriptor: number[] } | null = null;
       let bestDistance = Infinity;
 
       for (const stored of allDescriptors) {
         const distance = compareFaces(currentDescriptor, stored.descriptor);
         if (distance < bestDistance) {
           bestDistance = distance;
-          bestMatch = { user_id: stored.user_id, full_name: stored.full_name, distance };
+          bestMatch = {
+            user_id: stored.user_id,
+            full_name: stored.full_name,
+            distance,
+            descriptor: stored.descriptor,
+          };
         }
       }
 
       if (bestMatch && bestMatch.distance < 0.6) {
-        setMatchedUser(bestMatch);
-        toast({ title: "Bem-vindo!", description: `Olá, ${bestMatch.full_name}!` });
+        setLivenessPrompt("Solicitando desafio aleatório de prova de vida...");
+        const challenge = await issueFaceLivenessChallenge(bestMatch.user_id, "clock_in");
+        const liveness = await runFaceLiveness(videoRef.current, challenge, setLivenessPrompt);
+        const verifiedDistance = compareFaces(liveness.descriptor, bestMatch.descriptor);
+        if (verifiedDistance >= 0.6) {
+          throw new Error("O rosto mudou durante a prova de vida. Posicione-se novamente na câmera.");
+        }
+
+        setMatchedUser({
+          user_id: bestMatch.user_id,
+          full_name: bestMatch.full_name,
+          distance: verifiedDistance,
+          faceDescriptor: liveness.descriptor,
+          livenessChallengeId: challenge.id,
+          livenessProof: liveness.proof,
+        });
+        toast({ title: "Identidade e prova de vida confirmadas", description: `Olá, ${bestMatch.full_name}!` });
         await loadUserBatidas(bestMatch.user_id);
       } else {
-        // Only toast if explicitly failed to match after a detection
         toast({ title: "Não reconhecido", description: "Não te encontrei no sistema.", variant: "destructive" });
       }
     } catch (err) {
-      console.error("Face scan error:", err);
+      console.error("Face scan/liveness error:", err);
+      toast({
+        title: "Verificação facial não concluída",
+        description: err instanceof Error ? err.message : "Não foi possível validar a prova de vida. Tente novamente.",
+        variant: "destructive",
+      });
     } finally {
       setScanning(false);
+      setLivenessPrompt("Mantenha o rosto centralizado");
     }
   }, [modelsLoaded, allDescriptors, detectFace, compareFaces, toast]);
 
@@ -228,7 +260,15 @@ export default function RegistroPonto() {
         const geoPayload = await getRequiredBrowserGeoPayload();
 
         const { data, error } = await supabase.functions.invoke("registrar-ponto-facial", {
-          body: { action, user_id: matchedUser.user_id, user_agent: navigator.userAgent, ...geoPayload },
+          body: {
+            action,
+            user_id: matchedUser.user_id,
+            user_agent: navigator.userAgent,
+            face_descriptor: matchedUser.faceDescriptor,
+            liveness_challenge_id: matchedUser.livenessChallengeId,
+            liveness_proof: matchedUser.livenessProof,
+            ...geoPayload,
+          },
         });
 
         if (error) throw error;
@@ -392,8 +432,8 @@ export default function RegistroPonto() {
                                   <ScanFace className="h-10 w-10 text-primary-foreground" />
                                 </div>
                               </div>
-                              <p className="text-white text-xl font-black tracking-tighter">Buscando colaborador...</p>
-                              <p className="text-white/60 text-sm mt-1">Mantenha o rosto centralizado</p>
+                              <p className="text-white text-xl font-black tracking-tighter">Verificação facial segura</p>
+                              <p className="text-white/70 text-sm mt-1">{livenessPrompt}</p>
                               
                               <div className="absolute top-0 left-0 w-full h-2 bg-gradient-to-r from-transparent via-primary to-transparent animate-scan-beam" />
                             </motion.div>
