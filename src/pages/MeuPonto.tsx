@@ -24,7 +24,8 @@ import {
   Check,
   Zap,
   X,
-  Fingerprint
+  Fingerprint,
+  RefreshCw
 } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 
@@ -35,7 +36,7 @@ export default function MeuPonto() {
   const videoRef = useRef<HTMLVideoElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const streamRef = useRef<MediaStream | null>(null);
-  const { modelsLoaded, loading: modelsLoading, error: modelsError, detectFace, compareFaces } = useFaceApi();
+  const { modelsLoaded, loading: modelsLoading, error: modelsError, retryModels, detectFace, compareFaces } = useFaceApi();
   const { toast } = useToast();
   const { user, profile } = useAuth();
 
@@ -343,7 +344,20 @@ export default function MeuPonto() {
             </CardTitle>
           </CardHeader>
           <CardContent className="space-y-6 px-6 pb-6">
-            {!myDescriptor && !modelsLoading && (
+            {!modelsLoading && modelsError && (
+              <div className="space-y-3 rounded-2xl border border-destructive/30 bg-destructive/5 p-4">
+                <div className="flex items-start gap-2 text-destructive">
+                  <AlertTriangle className="mt-0.5 h-5 w-5 shrink-0" />
+                  <p className="text-sm">{modelsError}</p>
+                </div>
+                <Button variant="outline" onClick={retryModels} className="w-full gap-2">
+                  <RefreshCw className="h-4 w-4" />
+                  Tentar carregar modelos novamente
+                </Button>
+              </div>
+            )}
+
+            {!myDescriptor && !modelsLoading && !modelsError && (
               <div className="flex items-center gap-3 p-5 rounded-2xl bg-amber-500/10 text-amber-600 border border-amber-500/20">
                 <AlertTriangle className="h-6 w-6 shrink-0" />
                 <div>
@@ -366,7 +380,7 @@ export default function MeuPonto() {
               </div>
             )}
 
-            {!cameraActive && myDescriptor && (
+            {!cameraActive && modelsError == null && myDescriptor && (
               <div className="flex flex-col items-center justify-center gap-6 py-12 rounded-2xl border-2 border-dashed border-muted animate-in fade-in zoom-in duration-500">
                 <div className="h-24 w-24 rounded-full bg-accent/20 flex items-center justify-center group cursor-pointer" onClick={startCamera}>
                   <Camera className="h-10 w-10 text-muted-foreground group-hover:text-primary transition-colors" />
