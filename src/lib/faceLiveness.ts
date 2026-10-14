@@ -88,21 +88,38 @@ export function calculateBlinkThresholds(baselineOpenEar: number) {
 
 export type HeadTurnDirection = -1 | 1;
 
-export function getHeadTurnDirection(yawDelta: number): HeadTurnDirection | null {
+export function calculateHeadTurnThresholds(baselineYawSamples: readonly number[]) {
+  const finite = baselineYawSamples.filter(Number.isFinite).slice().sort((a, b) => a - b);
+  if (finite.length < 3) return { movement: 0.05, center: 0.03 };
+
+  const baseline = finite[Math.floor(finite.length / 2)];
+  const deviations = finite.map((value) => Math.abs(value - baseline)).sort((a, b) => a - b);
+  const medianNoise = deviations[Math.floor(deviations.length / 2)];
+  const center = Math.min(0.06, Math.max(0.03, medianNoise * 2));
+  return { movement: Math.min(0.08, center + 0.02), center };
+}
+
+export type HeadTurnDirection = -1 | 1;
+
+export function getHeadTurnDirection(yawDelta: number, movementThreshold = 0.05): HeadTurnDirection | null {
   if (!Number.isFinite(yawDelta)) return null;
-  if (yawDelta < -0.04) return -1;
-  if (yawDelta > 0.04) return 1;
+  if (yawDelta < -movementThreshold) return -1;
+  if (yawDelta > movementThreshold) return 1;
   return null;
 }
 
 /** The first turn can be either direction; the second must reverse it. */
-export function isHeadTurnDetected(yawDelta: number, firstDirection: HeadTurnDirection | null): boolean {
-  const direction = getHeadTurnDirection(yawDelta);
+export function isHeadTurnDetected(
+  yawDelta: number,
+  firstDirection: HeadTurnDirection | null,
+  movementThreshold = 0.05,
+): boolean {
+  const direction = getHeadTurnDirection(yawDelta, movementThreshold);
   return direction !== null && (firstDirection === null || direction === -firstDirection);
 }
 
-export function isHeadBackAtCenter(yawDelta: number): boolean {
-  return Number.isFinite(yawDelta) && Math.abs(yawDelta) < 0.03;
+export function isHeadBackAtCenter(yawDelta: number, centerTolerance = 0.03): boolean {
+  return Number.isFinite(yawDelta) && Math.abs(yawDelta) < centerTolerance;
 }
 
 async function pause(ms: number): Promise<void> {
@@ -241,6 +258,8 @@ export async function runFaceLiveness(
 
   const sortedYaw = [...baselineYawSamples].sort((a, b) => a - b);
   const baselineYaw = sortedYaw[Math.floor(sortedYaw.length / 2)];
+  const { movement: headTurnThreshold, center: headCenterTolerance } =
+    calculateHeadTurnThresholds(baselineYawSamples);
   const sortedEar = [...baselineEarSamples].sort((a, b) => a - b);
   const baselineOpenEar = sortedEar[Math.floor(sortedEar.length / 2)];
   const { closed: closedEyeThreshold, reopened: reopenedEyeThreshold } =
@@ -279,7 +298,7 @@ export async function runFaceLiveness(
       } else {
         const delta = signal.yaw - baselineYaw;
         const direction = getHeadTurnDirection(delta);
-        const movedCorrectly = step !== "blink" && isHeadTurnDetected(delta, firstTurnDirection);
+        const movedCorrectly = step !== "blink" && isHeadTurnDetected(delta, firstTurnDirection, headTurnThreshold);
 
         if (!movementStarted) {
           movedFrames = movedCorrectly ? movedFrames + 1 : 0;
@@ -289,7 +308,7 @@ export async function runFaceLiveness(
             onPrompt("Movimento detectado. Volte a olhar para o centro");
           }
         } else {
-          returnedFrames = isHeadBackAtCenter(delta) ? returnedFrames + 1 : 0;
+          returnedFrames = isHeadBackAtCenter(delta, headCenterTolerance) ? returnedFrames + 1 : 0;
           if (returnedFrames >= 2) {
             verifiedSignal = signal;
             break;
