@@ -324,7 +324,7 @@ serve(async (req) => {
     if (comprovantePath) {
       const pathParts = comprovantePath.split("/");
       if (pathParts.length !== 2 || pathParts[0] !== user_id || pathParts[1].includes("..")
-        || !/^[a-zA-Z0-9._-]+\\.(jpg|jpeg|png|webp)$/i.test(pathParts[1])) {
+        || !/^[a-zA-Z0-9._-]+\.(jpg|jpeg|png|webp)$/i.test(pathParts[1])) {
         return new Response(JSON.stringify({ success: false, error: "Caminho da imagem inválido." }), {
           status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" },
         });
@@ -501,7 +501,7 @@ serve(async (req) => {
     saveSession(supabase, {
       user_id, registro_ponto_id: data.id,
       acao: action, ip: clientIp, userAgent,
-      geoLatitude, geoLongitude,
+      geoLatitude, geoLongitude, comprovantePath,
     }).catch(console.error);
 
     const crpt = {
