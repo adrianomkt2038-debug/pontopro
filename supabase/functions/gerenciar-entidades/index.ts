@@ -825,7 +825,7 @@ Deno.serve(async (req) => {
         return jsonResponse({ success: false, error: "O descritor facial é inválido. Faça o cadastro novamente pela câmera." }, 400);
       }
 
-      if (!challengeId || !Array.isArray(proofSteps) || proofSteps.length !== 3
+      if (!challengeId || !Array.isArray(proofSteps) || proofSteps.length !== 2
         || !Number.isSafeInteger(proofDuration) || proofDuration < 4000 || proofDuration > 120000) {
         return jsonResponse({ success: false, error: "Prova de vida obrigatória. Faça o cadastro novamente pela câmera." }, 403);
       }
@@ -843,9 +843,14 @@ Deno.serve(async (req) => {
       if (challengeError) throw challengeError;
 
       const expectedSteps = challenge?.challenge_steps as string[] | undefined;
-      if (!challenge || !expectedSteps || expectedSteps.length !== 3
-        || !expectedSteps.every((step, index) => proofSteps[index] === step)
-        || !["blink", "turn_left", "turn_right"].every((step) => expectedSteps.includes(step))) {
+      const validExpectedSteps = Array.isArray(expectedSteps)
+        && expectedSteps.length === 2
+        && new Set(expectedSteps).size === 2
+        && expectedSteps.every((step) => ["blink", "turn_left", "turn_right"].includes(step))
+        && expectedSteps.includes("blink")
+        && (expectedSteps.includes("turn_left") !== expectedSteps.includes("turn_right"));
+      if (!challenge || !validExpectedSteps
+        || !expectedSteps!.every((step, index) => proofSteps[index] === step)) {
         return jsonResponse({ success: false, error: "Prova de vida inválida ou expirada. Tente novamente." }, 403);
       }
 
