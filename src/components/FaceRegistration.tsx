@@ -1,10 +1,11 @@
 import { useState, useRef, useEffect, useCallback } from "react";
 import { useFaceApi } from "@/hooks/useFaceApi";
+import { issueFaceLivenessChallenge, runFaceLiveness } from "@/lib/faceLiveness";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { useToast } from "@/hooks/use-toast";
 import { attachStreamToVideoElement, getCameraErrorMessage, isEmbeddedContext, requestUserCameraStream } from "@/lib/camera";
-import { Camera, Loader2, ScanFace, CheckCircle2, Upload } from "lucide-react";
+import { Camera, Loader2, ScanFace, CheckCircle2 } from "lucide-react";
 import { invokeEntityAction } from "@/lib/invokeEntityAction";
 
 interface FaceRegistrationProps {
@@ -16,14 +17,14 @@ interface FaceRegistrationProps {
 export function FaceRegistration({ userId, userName, onRegistered }: FaceRegistrationProps) {
   const videoRef = useRef<HTMLVideoElement>(null);
   const streamRef = useRef<MediaStream | null>(null);
-  const fileInputRef = useRef<HTMLInputElement>(null);
-  const { modelsLoaded, loading: modelsLoading, detectFace, getDescriptorFromImage } = useFaceApi();
+  const { modelsLoaded, loading: modelsLoading } = useFaceApi();
   const { toast } = useToast();
 
   const [open, setOpen] = useState(false);
   const [cameraActive, setCameraActive] = useState(false);
   const [processing, setProcessing] = useState(false);
   const [success, setSuccess] = useState(false);
+  const [livenessPrompt, setLivenessPrompt] = useState("Posicione o rosto na câmera");
 
   const startCamera = useCallback(async () => {
     try {
@@ -50,6 +51,7 @@ export function FaceRegistration({ userId, userName, onRegistered }: FaceRegistr
     }
 
     setCameraActive(false);
+    setLivenessPrompt("Posicione o rosto na câmera");
   }, []);
 
   useEffect(() => {
@@ -84,13 +86,15 @@ export function FaceRegistration({ userId, userName, onRegistered }: FaceRegistr
   }, [cameraActive, toast]);
 
   const saveDescriptor = useCallback(
-    async (descriptor: number[]) => {
+    async (descriptor: number[], challengeId: string, proof: { completedSteps: string[]; durationMs: number }) => {
       try {
-        // Keep only the descriptor; do not persist raw facial photos.
+        // Persist only the descriptor and proof metadata; never upload raw facial photos or video.
         await invokeEntityAction("face_descriptor_upsert", {
           target_user_id: userId,
           descriptor,
           avatar_url: null,
+          liveness_challenge_id: challengeId,
+          liveness_proof: proof,
         });
 
         setSuccess(true);
@@ -110,54 +114,26 @@ export function FaceRegistration({ userId, userName, onRegistered }: FaceRegistr
   );
 
   const captureFromCamera = useCallback(async () => {
-    if (!videoRef.current || !modelsLoaded) return;
+    if (!videoRef.current || !modelsLoaded || processing) return;
     setProcessing(true);
 
     try {
-      const detection = await detectFace(videoRef.current);
-      if (!detection) {
-        toast({ title: "Nenhum rosto detectado", description: "Posicione o rosto na câmera e tente novamente", variant: "destructive" });
-        return;
-      }
-      await saveDescriptor(Array.from(detection.descriptor));
+      setLivenessPrompt("Solicitando desafio aleatório de prova de vida...");
+      const challenge = await issueFaceLivenessChallenge(userId, "enrollment");
+      const result = await runFaceLiveness(videoRef.current, challenge, setLivenessPrompt);
+      await saveDescriptor(result.descriptor, challenge.id, result.proof);
     } catch (err) {
-      console.error(err);
-      toast({ title: "Erro", description: "Falha ao processar rosto", variant: "destructive" });
+      console.error("Face enrollment liveness failed:", err);
+      toast({
+        title: "Cadastro não concluído",
+        description: err instanceof Error ? err.message : "Não foi possível validar a prova de vida. Tente novamente.",
+        variant: "destructive",
+      });
     } finally {
       setProcessing(false);
+      setLivenessPrompt("Posicione o rosto na câmera");
     }
-  }, [modelsLoaded, detectFace, saveDescriptor, toast]);
-
-  const handleFileUpload = useCallback(
-    async (e: React.ChangeEvent<HTMLInputElement>) => {
-      const file = e.target.files?.[0];
-      if (!file || !modelsLoaded) return;
-
-      setProcessing(true);
-      try {
-        const img = new Image();
-        img.crossOrigin = "anonymous";
-        const url = URL.createObjectURL(file);
-        img.src = url;
-        await new Promise((resolve) => (img.onload = resolve));
-
-        const descriptor = await getDescriptorFromImage(img);
-        URL.revokeObjectURL(url);
-
-        if (!descriptor) {
-          toast({ title: "Nenhum rosto detectado", description: "A foto precisa conter um rosto visível", variant: "destructive" });
-          return;
-        }
-        await saveDescriptor(descriptor);
-      } catch (err) {
-        console.error(err);
-        toast({ title: "Erro", description: "Falha ao processar foto", variant: "destructive" });
-      } finally {
-        setProcessing(false);
-      }
-    },
-    [modelsLoaded, getDescriptorFromImage, saveDescriptor, toast]
-  );
+  }, [modelsLoaded, processing, userId, saveDescriptor, toast]);
 
   return (
     <Dialog
@@ -190,15 +166,11 @@ export function FaceRegistration({ userId, userName, onRegistered }: FaceRegistr
             <div className="flex flex-col gap-3">
               <Button onClick={startCamera} className="gap-2 h-12 rounded-xl">
                 <Camera className="h-5 w-5" />
-                Capturar pela Câmera
+                Usar câmera ao vivo
               </Button>
-              <div className="relative">
-                <Button variant="outline" className="w-full gap-2 h-12 rounded-xl" onClick={() => fileInputRef.current?.click()}>
-                  <Upload className="h-5 w-5" />
-                  Enviar Foto
-                </Button>
-                <input ref={fileInputRef} type="file" accept="image/*" className="hidden" onChange={handleFileUpload} />
-              </div>
+              <p className="text-xs text-muted-foreground text-center">
+                O cadastro exige piscada e movimentos aleatórios da cabeça. Arquivos de foto não são aceitos.
+              </p>
               {isEmbeddedContext() && (
                 <p className="text-xs text-muted-foreground text-center">
                   Se a câmera não abrir no preview, teste no link publicado do app.
@@ -211,12 +183,15 @@ export function FaceRegistration({ userId, userName, onRegistered }: FaceRegistr
             <div className="space-y-3">
               <div className="relative rounded-xl overflow-hidden bg-black aspect-[3/4]">
                 <video ref={videoRef} autoPlay playsInline muted className="w-full h-full object-cover" style={{ transform: "scaleX(-1)" }} />
+                <div className="absolute inset-x-2 top-2 z-20 rounded-lg bg-black/70 p-2 text-center text-xs font-semibold text-white">
+                  {livenessPrompt}
+                </div>
 
                 <div className="absolute inset-x-2 bottom-2 z-20">
                   <div className="rounded-xl bg-background/30 backdrop-blur-sm p-2 flex flex-col md:flex-row gap-2">
                     <Button onClick={captureFromCamera} disabled={processing} className="w-full md:flex-1 gap-2 rounded-xl h-11 text-sm touch-manipulation active:scale-95 transition-transform bg-primary/90 hover:bg-primary" size="lg">
                       {processing ? <Loader2 className="h-4 w-4 animate-spin" /> : <ScanFace className="h-4 w-4" />}
-                      {processing ? "Processando..." : "Capturar"}
+                      {processing ? "Verificando prova de vida..." : "Prova de vida e cadastro"}
                     </Button>
                     <Button variant="outline" onClick={stopCamera} className="w-full md:w-auto rounded-xl h-11 text-sm bg-background/80 border-border/60 hover:bg-background touch-manipulation active:scale-95 transition-transform" size="lg">
                       Cancelar
