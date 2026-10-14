@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect, useCallback } from "react";
 import { useFaceApi } from "@/hooks/useFaceApi";
-import { issueFaceLivenessChallenge, runFaceLiveness, type FaceLivenessChallenge } from "@/lib/faceLiveness";
+import { issueFaceLivenessChallenge, isFaceLivenessChallengeExpired, runFaceLiveness, type FaceLivenessChallenge } from "@/lib/faceLiveness";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { useToast } from "@/hooks/use-toast";
@@ -128,7 +128,7 @@ export function FaceRegistration({ userId, userName, onRegistered }: FaceRegistr
       const pendingChallenge = livenessChallengeRef.current;
       const challenge = pendingChallenge
         && pendingChallenge.userId === userId
-        && Date.parse(pendingChallenge.challenge.expiresAt) > Date.now()
+        && !isFaceLivenessChallengeExpired(pendingChallenge.challenge)
         ? pendingChallenge.challenge
         : await issueFaceLivenessChallenge(userId, "enrollment");
       livenessChallengeRef.current = { userId, challenge };
