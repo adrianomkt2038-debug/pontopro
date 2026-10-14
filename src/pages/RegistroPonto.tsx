@@ -41,6 +41,12 @@ interface MatchedUser {
   livenessProof: FaceLivenessProof;
 }
 
+interface ManualEmployee {
+  user_id: string;
+  full_name: string;
+  matricula: string | null;
+}
+
 export default function RegistroPonto() {
   const videoRef = useRef<HTMLVideoElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -62,12 +68,49 @@ export default function RegistroPonto() {
   const [allowedBatidas, setAllowedBatidas] = useState<string[]>(["entrada", "almoco_saida", "almoco_retorno", "saida"]);
   const [todayRegistro, setTodayRegistro] = useState<TodayRegistro | null>(null);
   const [loadingBatidas, setLoadingBatidas] = useState(false);
+  const [manualUsers, setManualUsers] = useState<ManualEmployee[]>([]);
+  const [selectedManualUserId, setSelectedManualUserId] = useState("");
+  const [pontoImage, setPontoImage] = useState<File | null>(null);
 
   // Clock
   useEffect(() => {
     const interval = setInterval(() => setCurrentTime(new Date()), 1000);
     return () => clearInterval(interval);
   }, []);
+
+  // Load active employees for the standard manual point terminal.
+  useEffect(() => {
+    async function loadManualUsers() {
+      const { data, error } = await supabase
+        .from("profiles")
+        .select("user_id, full_name, matricula")
+        .eq("active", true)
+        .order("full_name");
+      if (error) {
+        toast({ title: "Erro ao carregar colaboradores", description: error.message, variant: "destructive" });
+        return;
+      }
+      const employees = (data || []).map((employee) => ({
+        user_id: employee.user_id,
+        full_name: employee.full_name || "Colaborador",
+        matricula: employee.matricula || null,
+      }));
+      setManualUsers(employees);
+      if (employees.length > 0) setSelectedManualUserId((current) => current || employees[0].user_id);
+    }
+    void loadManualUsers();
+  }, [toast]);
+
+  useEffect(() => {
+    if (!selectedManualUserId) {
+      setTodayRegistro(null);
+      return;
+    }
+    setTodayRegistro(null);
+    setAllowedBatidas(["entrada", "almoco_saida", "almoco_retorno", "saida"]);
+    setPontoImage(null);
+    void loadUserBatidas(selectedManualUserId);
+  }, [selectedManualUserId]);
 
   // Load all face descriptors
   useEffect(() => {
@@ -239,6 +282,7 @@ export default function RegistroPonto() {
   }, [modelsLoaded, allDescriptors, detectFace, compareFaces, toast, livenessBlocked]);
 
   const loadUserBatidas = async (userId: string) => {
+    setAllowedBatidas(["entrada", "almoco_saida", "almoco_retorno", "saida"]);
     setLoadingBatidas(true);
     try {
       const { data: func } = await supabase
@@ -285,20 +329,38 @@ export default function RegistroPonto() {
 
   const registerPonto = useCallback(
     async (action: ActionType) => {
-      if (!matchedUser) return;
+      const selectedEmployee = manualUsers.find((employee) => employee.user_id === selectedManualUserId);
+      if (!selectedEmployee) {
+        toast({ title: "Selecione um colaborador", description: "Escolha a pessoa antes de registrar a batida.", variant: "destructive" });
+        return;
+      }
       setRegistering(true);
 
       try {
         const geoPayload = await getRequiredBrowserGeoPayload();
+        let comprovantePath: string | null = null;
+
+        if (pontoImage) {
+          const extension = pontoImage.type === "image/png" ? "png"
+            : pontoImage.type === "image/webp" ? "webp" : "jpg";
+          comprovantePath = `${selectedEmployee.user_id}/${Date.now()}-${action}.${extension}`;
+          const { error: uploadError } = await supabase.storage
+            .from("ponto-comprovantes")
+            .upload(comprovantePath, pontoImage, {
+              contentType: pontoImage.type,
+              upsert: false,
+            });
+          if (uploadError) throw new Error(`Não foi possível enviar a imagem: ${uploadError.message}`);
+        }
 
         const { data, error } = await supabase.functions.invoke("registrar-ponto-facial", {
           body: {
+            intent: "manual_clock_action",
             action,
-            user_id: matchedUser.user_id,
+            user_id: selectedEmployee.user_id,
             user_agent: navigator.userAgent,
-            face_descriptor: matchedUser.faceDescriptor,
-            liveness_challenge_id: matchedUser.livenessChallengeId,
-            liveness_proof: matchedUser.livenessProof,
+            terminal_id: "registro-manual-admin",
+            comprovante_path: comprovantePath,
             ...geoPayload,
           },
         });
@@ -316,14 +378,14 @@ export default function RegistroPonto() {
           saida: "Saída",
         };
 
-        setLastAction({ 
-          action: labels[action], 
+        setLastAction({
+          action: labels[action],
           time: new Date().toLocaleTimeString("pt-BR"),
-          name: matchedUser.full_name
+          name: selectedEmployee.full_name,
         });
-        toast({ title: "Registrado!", description: `${labels[action]} registrada para ${matchedUser.full_name}` });
-        await loadUserBatidas(matchedUser.user_id);
-        setMatchedUser(null);
+        toast({ title: "Registrado!", description: `${labels[action]} registrada para ${selectedEmployee.full_name}` });
+        await loadUserBatidas(selectedEmployee.user_id);
+        setPontoImage(null);
       } catch (err) {
         const message = await getEdgeFunctionErrorMessage(err);
         toast({ title: "Erro", description: message, variant: "destructive" });
@@ -331,7 +393,7 @@ export default function RegistroPonto() {
         setRegistering(false);
       }
     },
-    [matchedUser, toast]
+    [manualUsers, selectedManualUserId, pontoImage, toast]
   );
 
   const actionButtons: { action: ActionType; label: string; icon: React.ElementType; color: string; gradient: string }[] = [
@@ -403,231 +465,87 @@ export default function RegistroPonto() {
               )}
             </div>
 
-            {/* Recognition Area */}
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-6 w-full max-w-5xl">
-              {/* Camera Card */}
-              <Card className="border-none shadow-premium glass-card overflow-hidden flex flex-col">
-                <CardHeader className="pb-3 pt-6 px-6">
-                  <CardTitle className="flex items-center gap-2.5 text-lg font-bold">
-                    <ScanFace className="h-5 w-5 text-primary" />
-                    Portal de Identificação
-                  </CardTitle>
-                </CardHeader>
-                <CardContent className="px-6 pb-6 flex-1 flex flex-col">
-                  {modelsLoading && (
-                    <div className="mb-4 flex items-center justify-center gap-3 rounded-2xl border border-primary/20 bg-primary/5 p-4 text-muted-foreground">
-                      <Loader2 className="h-5 w-5 animate-spin text-primary" />
-                      <span className="text-sm">Carregando os modelos faciais para iniciar o scanner...</span>
-                    </div>
-                  )}
-                  {!modelsLoading && modelsError && (
-                    <div className="mb-4 space-y-3 rounded-2xl border border-destructive/30 bg-destructive/5 p-4">
-                      <div className="flex items-start gap-2 text-destructive">
-                        <AlertTriangle className="mt-0.5 h-5 w-5 shrink-0" />
-                        <p className="text-sm">{modelsError}</p>
-                      </div>
-                      <Button variant="outline" onClick={retryModels} className="w-full gap-2">
-                        <RefreshCw className="h-4 w-4" />
-                        Tentar carregar modelos novamente
-                      </Button>
-                    </div>
-                  )}
-                  {!cameraActive && !modelsError && !modelsLoading && (
-                    <div className="flex flex-col items-center justify-center gap-6 py-12 rounded-3xl border-2 border-dashed border-muted animate-in fade-in zoom-in duration-500 flex-1">
-                      <div className="h-24 w-24 rounded-full bg-accent/20 flex items-center justify-center group cursor-pointer" onClick={startCamera}>
-                        <Camera className="h-10 w-10 text-muted-foreground group-hover:text-primary transition-colors" />
-                      </div>
-                      <div className="text-center space-y-2 px-4">
-                        <h3 className="font-bold text-lg">Pronto para iniciar?</h3>
-                        <p className="text-sm text-muted-foreground max-w-[200px] mx-auto">
-                          O scanner iniciará automaticamente após ativar a câmera.
-                        </p>
-                      </div>
-                      <Button size="lg" onClick={startCamera} className="gap-2 rounded-2xl h-14 px-10 shadow-premium bg-primary hover:bg-primary/90 text-base font-bold">
-                        <Fingerprint className="h-5 w-5" />
-                        Registrar Ponto
-                      </Button>
-                    </div>
-                  )}
+            {/* Standard manual point registration */}
+            <Card className="w-full max-w-5xl border-none shadow-premium glass-card overflow-hidden">
+              <CardHeader className="pb-3 pt-6 px-6">
+                <CardTitle className="text-lg font-bold">Registro de Ponto</CardTitle>
+              </CardHeader>
+              <CardContent className="px-6 pb-6 space-y-6">
+                <p className="text-sm text-muted-foreground">
+                  Selecione o colaborador e a batida. O sistema continuará validando a sessão administrativa, o GPS e a sequência dos horários, sem verificação facial.
+                </p>
 
-                  {cameraActive && (
-                    <motion.div 
-                      initial={{ opacity: 0, scale: 0.98 }}
-                      animate={{ opacity: 1, scale: 1 }}
-                      className="space-y-6 flex-1 flex flex-col"
-                    >
-                      <div className="relative rounded-3xl overflow-hidden bg-black aspect-[4/3] sm:aspect-square shadow-inner-premium border border-white/10 group flex-1">
-                        <video
-                          ref={videoRef}
-                          autoPlay
-                          playsInline
-                          muted
-                          className="w-full h-full object-cover"
-                          style={{ transform: "scaleX(-1)" }}
-                        />
-                        <canvas ref={canvasRef} className="absolute inset-0 w-full h-full" />
-                        
-                        {/* Scanning Overlay */}
-                        <AnimatePresence>
-                          {scanning && (
-                            <motion.div 
-                              initial={{ opacity: 0 }}
-                              animate={{ opacity: 1 }}
-                              exit={{ opacity: 0 }}
-                              className="absolute inset-0 bg-black/60 backdrop-blur-[2px] flex flex-col items-center justify-center p-8 text-center z-30"
-                            >
-                              <div className="relative mb-4">
-                                <div className="absolute inset-0 rounded-full bg-primary/20 animate-ping" />
-                                <div className="h-20 w-20 rounded-full bg-primary flex items-center justify-center relative shadow-lg shadow-primary/40">
-                                  <ScanFace className="h-10 w-10 text-primary-foreground" />
-                                </div>
-                              </div>
-                              <p className="text-white text-xl font-black tracking-tighter">Verificação facial segura</p>
-                              <p className="text-white/70 text-sm mt-1">{livenessPrompt}</p>
-                              
-                              <div className="absolute top-0 left-0 w-full h-2 bg-gradient-to-r from-transparent via-primary to-transparent animate-scan-beam" />
-                            </motion.div>
-                          )}
-                        </AnimatePresence>
+                <div className="space-y-2">
+                  <label htmlFor="manual-ponto-employee" className="text-sm font-semibold">Colaborador</label>
+                  <select
+                    id="manual-ponto-employee"
+                    value={selectedManualUserId}
+                    onChange={(event) => setSelectedManualUserId(event.currentTarget.value)}
+                    className="w-full rounded-xl border border-border bg-background px-3 py-3 text-sm"
+                    disabled={manualUsers.length === 0 || registering}
+                  >
+                    {manualUsers.length === 0 && <option value="">Nenhum colaborador ativo encontrado</option>}
+                    {manualUsers.map((employee) => (
+                      <option key={employee.user_id} value={employee.user_id}>
+                        {employee.full_name}{employee.matricula ? ` — ${employee.matricula}` : ""}
+                      </option>
+                    ))}
+                  </select>
+                </div>
 
-                        {livenessBlocked && cameraActive && (
-                          <div className="absolute inset-0 z-30 flex flex-col items-center justify-center gap-4 bg-black/75 p-6 text-center">
-                            <p className="max-w-sm text-sm font-semibold text-white">{livenessPrompt}</p>
-                            <Button
-                              type="button"
-                              className="gap-2"
-                              onClick={() => setLivenessBlocked(false)}
-                            >
-                              <RefreshCw className="h-4 w-4" />
-                              Tentar novamente
-                            </Button>
-                          </div>
-                        )}
+                <div className="space-y-2">
+                  <label htmlFor="terminal-ponto-image" className="text-sm font-semibold">Enviar imagem (opcional)</label>
+                  <input
+                    key={pontoImage?.name || "empty"}
+                    id="terminal-ponto-image"
+                    type="file"
+                    accept="image/jpeg,image/png,image/webp"
+                    className="block w-full rounded-xl border border-border bg-background px-3 py-3 text-sm file:mr-3 file:rounded-md file:border-0 file:bg-primary file:px-3 file:py-2 file:font-semibold file:text-primary-foreground"
+                    onChange={(event) => {
+                      const file = event.currentTarget.files?.[0] ?? null;
+                      if (file && (!["image/jpeg", "image/png", "image/webp"].includes(file.type) || file.size > 8 * 1024 * 1024)) {
+                        toast({ title: "Imagem inválida", description: "Envie JPG, PNG ou WEBP de até 8 MB.", variant: "destructive" });
+                        event.currentTarget.value = "";
+                        setPontoImage(null);
+                        return;
+                      }
+                      setPontoImage(file);
+                    }}
+                  />
+                  {pontoImage && <p className="text-xs text-muted-foreground">Imagem anexada: {pontoImage.name}</p>}
+                </div>
 
-                        {/* Corner Accents */}
-                        <div className="absolute top-6 left-6 w-10 h-10 border-t-4 border-l-4 border-primary/50 rounded-tl-2xl z-20" />
-                        <div className="absolute top-6 right-6 w-10 h-10 border-t-4 border-r-4 border-primary/50 rounded-tr-2xl z-20" />
-                        <div className="absolute bottom-6 left-6 w-10 h-10 border-b-4 border-l-4 border-primary/50 rounded-bl-2xl z-20" />
-                        <div className="absolute bottom-6 right-6 w-10 h-10 border-b-4 border-r-4 border-primary/50 rounded-br-2xl z-20" />
-                      </div>
-
-                      <div className="flex gap-3">
-                        <div className="flex-1 flex items-center justify-center p-4 rounded-2xl bg-white/5 border border-white/10">
-                          <p className="text-xs font-bold text-muted-foreground/60 uppercase tracking-widest text-center">
-                            Monitoramento Automático Ativo
-                          </p>
-                        </div>
-                        <motion.button 
-                          whileHover={{ scale: 1.1, backgroundColor: "rgba(239, 68, 68, 0.15)" }}
-                          whileTap={{ scale: 0.9 }}
-                          onClick={stopCamera} 
-                          className="rounded-2xl h-14 w-14 flex items-center justify-center bg-white/5 hover:text-red-500 backdrop-blur-md border border-white/10 text-muted-foreground transition-colors"
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                  {actionButtons
+                    .filter((btn) => allowedBatidas.includes(btn.action))
+                    .map((btn) => {
+                      const alreadyRegistered = todayRegistro ? !!todayRegistro[btn.action as keyof TodayRegistro] : false;
+                      const canRegister = canRegisterPontoAction(btn.action, todayRegistro);
+                      return (
+                        <motion.button
+                          key={btn.action}
+                          whileHover={!alreadyRegistered && canRegister ? { scale: 1.03, y: -2 } : {}}
+                          whileTap={!alreadyRegistered && canRegister ? { scale: 0.97 } : {}}
+                          disabled={registering || loadingBatidas || !selectedManualUserId || alreadyRegistered || !canRegister}
+                          onClick={() => registerPonto(btn.action)}
+                          className={`relative min-h-24 flex flex-col items-center justify-center gap-2 rounded-2xl transition-all duration-300 ${
+                            alreadyRegistered
+                              ? "bg-muted text-muted-foreground/40"
+                              : canRegister
+                                ? `bg-gradient-to-br ${btn.gradient} text-white shadow-lg`
+                                : "bg-muted text-muted-foreground opacity-40 cursor-not-allowed"
+                          }`}
                         >
-                          <X className="h-6 w-6" />
+                          {registering ? <Loader2 className="h-5 w-5 animate-spin" /> : <btn.icon className="h-5 w-5" />}
+                          <span className="text-xs font-black uppercase tracking-tight text-center px-1">{alreadyRegistered ? `${btn.label} ✓` : btn.label}</span>
                         </motion.button>
-                      </div>
-                    </motion.div>
-                  )}
-                </CardContent>
-              </Card>
+                      );
+                    })}
+                </div>
 
-              {/* Action/Result Card */}
-              <Card className="border-none shadow-premium glass-card overflow-hidden flex flex-col">
-                <CardHeader className="pb-3 pt-6 px-6">
-                  <CardTitle className="text-lg font-bold">Painel de Registro</CardTitle>
-                </CardHeader>
-                <CardContent className="px-6 pb-6 pt-2 flex-1 flex flex-col items-center justify-center border-t border-white/5">
-                  <AnimatePresence mode="wait">
-                    {!matchedUser ? (
-                      <motion.div 
-                        key="no-match"
-                        initial={{ opacity: 0 }}
-                        animate={{ opacity: 1 }}
-                        className="text-center py-12 flex flex-col items-center gap-4"
-                      >
-                        <div className="h-20 w-20 rounded-3xl bg-muted/30 flex items-center justify-center">
-                          <ScanFace className="h-10 w-10 text-muted-foreground/30" />
-                        </div>
-                        <div>
-                          <p className="font-bold text-lg text-muted-foreground transition-all">Aguardando Identificação</p>
-                          <p className="text-sm text-muted-foreground/60 max-w-[200px] mt-1 italic">
-                            O sistema está escaneando automaticamente. Aproxime seu rosto.
-                          </p>
-                        </div>
-                      </motion.div>
-                    ) : (
-                      <motion.div 
-                        key="match"
-                        initial={{ opacity: 0, scale: 0.95 }}
-                        animate={{ opacity: 1, scale: 1 }}
-                        className="w-full space-y-6"
-                      >
-                        <div className="flex items-center gap-4 p-5 rounded-3xl bg-emerald-500/10 border border-emerald-500/20 shadow-soft">
-                          <div className="h-14 w-14 rounded-2xl bg-emerald-500 flex items-center justify-center shrink-0 shadow-lg shadow-emerald-500/20">
-                            <Check className="h-8 w-8 text-white" />
-                          </div>
-                          <div className="flex-1 min-w-0">
-                            <p className="font-black text-xl text-foreground tracking-tight leading-none truncate">{matchedUser.full_name}</p>
-                            <p className="text-xs text-emerald-600 font-bold uppercase tracking-widest mt-1">Colaborador Identificado</p>
-                          </div>
-                        </div>
-
-                        <div className="grid grid-cols-2 gap-3 pb-4">
-                          {actionButtons
-                            .filter((btn) => allowedBatidas.includes(btn.action))
-                            .map((btn, idx) => {
-                              const alreadyRegistered = todayRegistro ? !!todayRegistro[btn.action as keyof TodayRegistro] : false;
-                              const canRegister = canRegisterPontoAction(btn.action, todayRegistro);
-
-                              return (
-                                <motion.button
-                                  key={btn.action}
-                                  initial={{ opacity: 0, y: 10 }}
-                                  animate={{ opacity: 1, y: 0, transition: { delay: idx * 0.1 } }}
-                                  whileHover={!alreadyRegistered && canRegister ? { scale: 1.03, y: -2 } : {}}
-                                  whileTap={!alreadyRegistered && canRegister ? { scale: 0.97 } : {}}
-                                  disabled={registering || alreadyRegistered || !canRegister}
-                                  onClick={() => registerPonto(btn.action)}
-                                  className={`
-                                    relative h-32 flex flex-col items-center justify-center gap-2 rounded-3xl transition-all duration-300
-                                    ${alreadyRegistered 
-                                      ? "bg-muted text-muted-foreground/40" 
-                                      : canRegister
-                                        ? `bg-gradient-to-br ${btn.gradient} text-white shadow-lg shadow-${btn.color.split('-')[1]}-500/20`
-                                        : "bg-muted text-muted-foreground opacity-30 cursor-not-allowed"
-                                    }
-                                  `}
-                                >
-                                  <div className={`p-3 rounded-2xl ${alreadyRegistered ? 'bg-background/20' : 'bg-white/20'}`}>
-                                    {alreadyRegistered ? (
-                                      <CheckCircle2 className="h-6 w-6" />
-                                    ) : registering ? (
-                                      <Loader2 className="h-6 w-6 animate-spin" />
-                                    ) : (
-                                      <btn.icon className="h-7 w-7" />
-                                    )}
-                                  </div>
-                                  <span className="text-[10px] font-black uppercase tracking-widest text-center px-2">
-                                    {alreadyRegistered ? `${btn.label} ✓` : btn.label}
-                                  </span>
-                                </motion.button>
-                              );
-                            })}
-                        </div>
-
-                        <Button 
-                          variant="ghost" 
-                          onClick={() => setMatchedUser(null)} 
-                          className="w-full rounded-2xl h-10 text-muted-foreground hover:text-foreground font-bold"
-                        >
-                          Cancelar e trocar de usuário
-                        </Button>
-                      </motion.div>
-                    )}
-                  </AnimatePresence>
-                </CardContent>
-              </Card>
-            </div>
+                {loadingBatidas && <p className="text-xs text-muted-foreground">Carregando os registros de hoje...</p>}
+              </CardContent>
+            </Card>
 
             {/* Support Message */}
             <p className="text-[10px] text-muted-foreground/40 font-bold uppercase tracking-[0.2em] mt-8 text-center w-full">
