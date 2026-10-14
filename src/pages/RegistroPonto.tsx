@@ -51,6 +51,7 @@ export default function RegistroPonto() {
   const [scanning, setScanning] = useState(false);
   const [matchedUser, setMatchedUser] = useState<MatchedUser | null>(null);
   const [livenessPrompt, setLivenessPrompt] = useState("Mantenha o rosto centralizado");
+  const [livenessBlocked, setLivenessBlocked] = useState(false);
   const [registering, setRegistering] = useState(false);
   const [currentTime, setCurrentTime] = useState(new Date());
   const [lastAction, setLastAction] = useState<{ action: string; time: string; name: string } | null>(null);
@@ -95,6 +96,8 @@ export default function RegistroPonto() {
 
   const startCamera = useCallback(async () => {
     try {
+      setLivenessBlocked(false);
+      setLivenessPrompt("Mantenha o rosto centralizado");
       const stream = await requestUserCameraStream();
       streamRef.current = stream;
       setCameraActive(true);
@@ -141,8 +144,10 @@ export default function RegistroPonto() {
   }, [cameraActive, toast]);
 
   const scanFace = useCallback(async () => {
-    if (!videoRef.current || !modelsLoaded || allDescriptors.length === 0) return;
+    if (!videoRef.current || !modelsLoaded || allDescriptors.length === 0 || livenessBlocked) return;
 
+    let livenessStarted = false;
+    let mustRestartCamera = false;
     setScanning(true);
     setMatchedUser(null);
     setLivenessPrompt("Identificando o rosto...");
@@ -173,6 +178,7 @@ export default function RegistroPonto() {
 
       if (bestMatch && bestMatch.distance < 0.6) {
         setLivenessPrompt("Solicitando desafio aleatório de prova de vida...");
+        livenessStarted = true;
         const challenge = await issueFaceLivenessChallenge(bestMatch.user_id, "clock_in");
         const liveness = await runFaceLiveness(videoRef.current, challenge, setLivenessPrompt);
         const verifiedDistance = compareFaces(liveness.descriptor, bestMatch.descriptor);
@@ -195,6 +201,11 @@ export default function RegistroPonto() {
       }
     } catch (err) {
       console.error("Face scan/liveness error:", err);
+      if (livenessStarted) {
+        mustRestartCamera = true;
+        setLivenessBlocked(true);
+        setLivenessPrompt("Prova de vida não concluída. Feche a câmera e inicie novamente.");
+      }
       toast({
         title: "Verificação facial não concluída",
         description: err instanceof Error ? err.message : "Não foi possível validar a prova de vida. Tente novamente.",
@@ -202,9 +213,9 @@ export default function RegistroPonto() {
       });
     } finally {
       setScanning(false);
-      setLivenessPrompt("Mantenha o rosto centralizado");
+      if (!mustRestartCamera) setLivenessPrompt("Mantenha o rosto centralizado");
     }
-  }, [modelsLoaded, allDescriptors, detectFace, compareFaces, toast]);
+  }, [modelsLoaded, allDescriptors, detectFace, compareFaces, toast, livenessBlocked]);
 
   const loadUserBatidas = async (userId: string) => {
     setLoadingBatidas(true);
@@ -311,13 +322,13 @@ export default function RegistroPonto() {
 
   // Auto-scan logic when camera is activated
   useEffect(() => {
-    if (cameraActive && modelsLoaded && allDescriptors.length > 0 && !matchedUser && !scanning) {
+    if (cameraActive && modelsLoaded && allDescriptors.length > 0 && !matchedUser && !scanning && !livenessBlocked) {
       const timer = setTimeout(() => {
         scanFace();
       }, 1000);
       return () => clearTimeout(timer);
     }
-  }, [cameraActive, modelsLoaded, allDescriptors.length, matchedUser, scanning, scanFace]);
+  }, [cameraActive, modelsLoaded, allDescriptors.length, matchedUser, scanning, scanFace, livenessBlocked]);
 
   return (
     <div className="min-h-[100dvh] bg-background relative overflow-hidden flex flex-col items-center justify-start p-4 sm:p-8">
