@@ -1,5 +1,6 @@
 import * as faceapi from "face-api.js";
 import { supabase } from "@/integrations/supabase/client";
+import { getEdgeFunctionErrorMessage } from "@/lib/registroPonto";
 
 export type FaceLivenessStep = "blink" | "turn_left" | "turn_right";
 export type FaceLivenessPurpose = "clock_in" | "enrollment";
@@ -145,7 +146,11 @@ export async function issueFaceLivenessChallenge(
     body: { intent: "liveness_challenge", user_id: userId, purpose },
   });
 
-  if (error) throw new Error(error.message || "Não foi possível iniciar a prova de vida.");
+  if (error) {
+    // Edge Functions return useful rate-limit/authentication details in the
+    // response body; preserve those instead of showing the generic SDK error.
+    throw new Error(await getEdgeFunctionErrorMessage(error, "Não foi possível iniciar a prova de vida."));
+  }
   if (!data?.success || !data?.challenge?.id || !isValidLivenessSteps(data.challenge.steps)) {
     throw new Error(data?.error || "Não foi possível obter um desafio facial seguro. Tente novamente.");
   }
