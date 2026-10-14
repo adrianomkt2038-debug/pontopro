@@ -180,14 +180,18 @@ export async function runFaceLiveness(
   onPrompt("Centralize o rosto e olhe para a câmera");
   const calibrationDeadline = performance.now() + 5000;
   const baselineYawSamples: number[] = [];
+  const baselineEarSamples: number[] = [];
   let lastSignal: FaceSignal | null = null;
 
   while (baselineYawSamples.length < 4 && performance.now() < calibrationDeadline) {
     if (Date.now() >= expiresAt) throw new Error("O desafio facial expirou. Tente novamente.");
     const signal = await nextFaceSignal(video, calibrationDeadline);
     if (!signal) break;
-    if (signal.ear >= 0.18) {
+    // Individual eye shape and camera angle affect EAR. Keep a per-person
+    // open-eye baseline instead of requiring one fixed EAR for every employee.
+    if (signal.ear >= 0.1) {
       baselineYawSamples.push(signal.yaw);
+      baselineEarSamples.push(signal.ear);
       lastSignal = signal;
     }
     await pause(140);
@@ -199,6 +203,10 @@ export async function runFaceLiveness(
 
   const sortedYaw = [...baselineYawSamples].sort((a, b) => a - b);
   const baselineYaw = sortedYaw[Math.floor(sortedYaw.length / 2)];
+  const sortedEar = [...baselineEarSamples].sort((a, b) => a - b);
+  const baselineOpenEar = sortedEar[Math.floor(sortedEar.length / 2)];
+  const closedEyeThreshold = Math.min(0.18, baselineOpenEar * 0.72);
+  const reopenedEyeThreshold = Math.max(closedEyeThreshold + 0.025, baselineOpenEar * 0.88);
   const completedSteps: FaceLivenessStep[] = [];
 
   for (const step of challenge.steps) {
@@ -217,14 +225,14 @@ export async function runFaceLiveness(
       lastSignal = signal;
 
       if (step === "blink") {
-        if (signal.ear < 0.18) blinkClosed = true;
-        if (blinkClosed && signal.ear > 0.23) {
+        if (signal.ear < closedEyeThreshold) blinkClosed = true;
+        if (blinkClosed && signal.ear > reopenedEyeThreshold) {
           verifiedSignal = signal;
           break;
         }
       } else {
         const delta = signal.yaw - baselineYaw;
-        const movedCorrectly = step === "turn_left" ? delta < -0.12 : delta > 0.12;
+        const movedCorrectly = step === "turn_left" ? delta < -0.1 : delta > 0.1;
 
         if (!movementStarted) {
           movedFrames = movedCorrectly ? movedFrames + 1 : 0;
@@ -233,7 +241,7 @@ export async function runFaceLiveness(
             onPrompt("Movimento detectado. Volte a olhar para a câmera");
           }
         } else {
-          returnedFrames = Math.abs(delta) < 0.07 ? returnedFrames + 1 : 0;
+          returnedFrames = Math.abs(delta) < 0.1 ? returnedFrames + 1 : 0;
           if (returnedFrames >= 2) {
             verifiedSignal = signal;
             break;
