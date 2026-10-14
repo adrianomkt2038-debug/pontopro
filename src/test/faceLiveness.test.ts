@@ -3,6 +3,7 @@ import {
   areLivenessStepsComplete,
   calculateBlinkThresholds,
   calculateEyeAspectRatio,
+  calculateHeadTurnThresholds,
   getHeadTurnDirection,
   hasLiveVideoTrack,
   isHeadBackAtCenter,
@@ -65,15 +66,26 @@ describe("face liveness verification helpers", () => {
   });
 
   it("adapts head-turn detection to mirrored camera direction and requires the opposite second turn", () => {
-    expect(getHeadTurnDirection(-0.05)).toBe(-1);
-    expect(getHeadTurnDirection(0.05)).toBe(1);
+    expect(getHeadTurnDirection(-0.06)).toBe(-1);
+    expect(getHeadTurnDirection(0.06)).toBe(1);
     expect(getHeadTurnDirection(0.02)).toBe(null);
-    expect(isHeadTurnDetected(-0.05, null)).toBe(true);
-    expect(isHeadTurnDetected(0.05, null)).toBe(true);
-    expect(isHeadTurnDetected(-0.05, 1)).toBe(true);
-    expect(isHeadTurnDetected(0.05, 1)).toBe(false);
+    expect(isHeadTurnDetected(-0.06, null)).toBe(true);
+    expect(isHeadTurnDetected(0.06, null)).toBe(true);
+    expect(isHeadTurnDetected(-0.06, 1)).toBe(true);
+    expect(isHeadTurnDetected(0.06, 1)).toBe(false);
     expect(isHeadBackAtCenter(0.02)).toBe(true);
     expect(isHeadBackAtCenter(-0.02)).toBe(true);
     expect(isHeadBackAtCenter(0.05)).toBe(false);
+  });
+
+  it("adapts head movement tolerance to the noise in the camera baseline", () => {
+    const calm = calculateHeadTurnThresholds([-0.01, 0, 0.01, 0]);
+    expect(calm.center).toBeCloseTo(0.03);
+    expect(calm.movement).toBeGreaterThan(calm.center);
+
+    const noisy = calculateHeadTurnThresholds([-0.04, 0, 0.04, 0.03]);
+    expect(noisy.center).toBeGreaterThan(calm.center);
+    expect(noisy.movement).toBeGreaterThan(calm.movement);
+    expect(noisy.center).toBeLessThanOrEqual(0.06);
   });
 });
