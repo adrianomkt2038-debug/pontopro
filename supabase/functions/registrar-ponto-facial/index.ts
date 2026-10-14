@@ -130,6 +130,7 @@ serve(async (req) => {
     const isAdmin = !!adminRole;
 
     const body = await req.json();
+    const intent = typeof body?.intent === "string" ? body.intent.trim() : "";
     const action = typeof body?.action === "string" ? body.action.trim() : "";
     const user_id = typeof body?.user_id === "string" ? body.user_id.trim() : "";
     const terminal_id = typeof body?.terminal_id === "string" ? body.terminal_id.trim() : "";
@@ -138,14 +139,14 @@ serve(async (req) => {
     const geoLatitude = normalizeCoordinate(body?.geo_latitude, "lat");
     const geoLongitude = normalizeCoordinate(body?.geo_longitude, "lon");
 
-    if (!action || !["entrada", "almoco_saida", "almoco_retorno", "saida"].includes(action)) {
+    if (intent !== "liveness_challenge" && (!action || !["entrada", "almoco_saida", "almoco_retorno", "saida"].includes(action))) {
       return new Response(
         JSON.stringify({ success: false, error: "Invalid payload: action must be one of entrada, almoco_saida, almoco_retorno, saida" }),
         { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
     }
 
-    if (geoLatitude === null || geoLongitude === null) {
+    if (intent !== "liveness_challenge" && (geoLatitude === null || geoLongitude === null)) {
       return new Response(
         JSON.stringify({ success: false, error: "Invalid payload: exact GPS coordinates are required" }),
         { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
@@ -186,7 +187,129 @@ serve(async (req) => {
       });
     }
 
+    if (intent === "liveness_challenge") {
+      const purpose = body?.purpose === "enrollment" ? "enrollment" : body?.purpose === "clock_in" ? "clock_in" : null;
+      if (!purpose) {
+        return new Response(JSON.stringify({ success: false, error: "Finalidade da prova de vida inválida" }), {
+          status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+
+      const steps = ["blink", "turn_left", "turn_right"];
+      for (let i = steps.length - 1; i > 0; i--) {
+        const random = new Uint32Array(1);
+        crypto.getRandomValues(random);
+        const j = random[0] % (i + 1);
+        [steps[i], steps[j]] = [steps[j], steps[i]];
+      }
+      const expiresAt = new Date(Date.now() + 120000).toISOString();
+      const { data: challenge, error: challengeError } = await supabase
+        .from("face_liveness_challenges")
+        .insert({ user_id, purpose, challenge_steps: steps, expires_at: expiresAt })
+        .select("id, challenge_steps, expires_at")
+        .single();
+      if (challengeError) throw challengeError;
+
+      return new Response(JSON.stringify({
+        success: true,
+        challenge: { id: challenge.id, steps: challenge.challenge_steps, expires_at: challenge.expires_at },
+      }), {
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
+    if (intent) {
+      return new Response(JSON.stringify({ success: false, error: "Intenção de solicitação inválida" }), {
+        status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
     const now = new Date().toISOString();
+
+    const challengeId = typeof body?.liveness_challenge_id === "string" ? body.liveness_challenge_id.trim() : "";
+    const proof = body?.liveness_proof;
+    const proofSteps = proof?.completedSteps;
+    const proofDuration = proof?.durationMs;
+    const validProof = Array.isArray(proofSteps)
+      && Array.isArray(proof?.completedSteps)
+      && proofSteps.length === 3
+      && proofDuration >= 4000
+      && proofDuration <= 120000
+      && Number.isSafeInteger(proofDuration);
+
+    if (!challengeId || !validProof) {
+      return new Response(JSON.stringify({ success: false, error: "Prova de vida obrigatória. Inicie a verificação novamente." }), {
+        status: 403, headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
+    const { data: livenessChallenge, error: challengeLookupError } = await supabase
+      .from("face_liveness_challenges")
+      .select("id, challenge_steps, expires_at, consumed_at")
+      .eq("id", challengeId)
+      .eq("user_id", user_id)
+      .eq("purpose", "clock_in")
+      .gt("expires_at", now)
+      .is("consumed_at", null)
+      .maybeSingle();
+    if (challengeLookupError) throw challengeLookupError;
+    const expectedSteps = livenessChallenge?.challenge_steps as string[] | undefined;
+    if (!livenessChallenge || !expectedSteps || expectedSteps.length !== 3
+      || !expectedSteps.every((step, index) => proofSteps[index] === step)
+      || !["blink", "turn_left", "turn_right"].every((step) => expectedSteps.includes(step))) {
+      return new Response(JSON.stringify({ success: false, error: "Prova de vida inválida ou expirada. Tente novamente." }), {
+        status: 403, headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
+    const liveDescriptor = body?.face_descriptor;
+    if (!Array.isArray(liveDescriptor) || liveDescriptor.length !== 128
+      || !liveDescriptor.every((value: unknown) => typeof value === "number" && Number.isFinite(value))) {
+      return new Response(JSON.stringify({ success: false, error: "A imagem facial não pôde ser validada. Tente novamente." }), {
+        status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
+    const { data: registeredFace, error: faceError } = await supabase
+      .from("face_descriptors")
+      .select("descriptor")
+      .eq("user_id", user_id)
+      .maybeSingle();
+    if (faceError) throw faceError;
+    const storedDescriptor = registeredFace?.descriptor as number[] | undefined;
+    if (!Array.isArray(storedDescriptor) || storedDescriptor.length !== liveDescriptor.length
+      || !storedDescriptor.every((value) => typeof value === "number" && Number.isFinite(value))) {
+      return new Response(JSON.stringify({ success: false, error: "Cadastro facial ausente ou inválido. Contate o RH." }), {
+        status: 403, headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
+    let squaredDistance = 0;
+    for (let i = 0; i < storedDescriptor.length; i++) {
+      squaredDistance += Math.pow(liveDescriptor[i] - storedDescriptor[i], 2);
+    }
+    const serverDistance = Math.sqrt(squaredDistance);
+    if (!Number.isFinite(serverDistance) || serverDistance >= 0.6) {
+      return new Response(JSON.stringify({ success: false, error: "O rosto não corresponde ao cadastro facial." }), {
+        status: 403, headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
+    const consumeLivenessChallenge = async () => {
+      const { data: consumed, error: consumeError } = await supabase
+        .from("face_liveness_challenges")
+        .update({ consumed_at: new Date().toISOString() })
+        .eq("id", challengeId)
+        .eq("user_id", user_id)
+        .eq("purpose", "clock_in")
+        .gt("expires_at", new Date().toISOString())
+        .is("consumed_at", null)
+        .select("id")
+        .maybeSingle();
+      if (consumeError) throw consumeError;
+      if (!consumed) throw new Error("Esta prova de vida já foi utilizada ou expirou. Inicie a verificação novamente.");
+    };
+
     const today = getBusinessDate(new Date(now));
 
     const { data: existing, error: existingError } = await supabase
@@ -204,6 +327,7 @@ serve(async (req) => {
           { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
         );
       }
+      await consumeLivenessChallenge();
       const { data, error } = await supabase.from("registros_ponto").insert({
         user_id,
         data: today,
@@ -307,6 +431,7 @@ serve(async (req) => {
       }
     }
 
+    await consumeLivenessChallenge();
     let updateQuery = supabase
       .from("registros_ponto")
       .update(updateData)
