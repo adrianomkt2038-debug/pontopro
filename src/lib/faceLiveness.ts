@@ -33,7 +33,7 @@ const ALL_STEPS: FaceLivenessStep[] = ["blink", "turn_left", "turn_right"];
 const DETECTION_OPTIONS = new faceapi.TinyFaceDetectorOptions({
   // Match the main scanner's input scale while keeping a practical confidence threshold.
   inputSize: 416,
-  scoreThreshold: 0.5,
+  scoreThreshold: 0.4,
 });
 
 export function getLivenessStepLabel(step: FaceLivenessStep): string {
@@ -194,7 +194,7 @@ export async function runFaceLiveness(
     if (!signal) break;
     // Individual eye shape and camera angle affect EAR. Keep a per-person
     // open-eye baseline instead of requiring one fixed EAR for every employee.
-    if (signal.ear >= 0.1) {
+    if (signal.ear >= 0.08) {
       baselineYawSamples.push(signal.yaw);
       baselineEarSamples.push(signal.ear);
       lastSignal = signal;
@@ -237,7 +237,7 @@ export async function runFaceLiveness(
         }
       } else {
         const delta = signal.yaw - baselineYaw;
-        const movedCorrectly = step === "turn_left" ? delta < -0.1 : delta > 0.1;
+        const movedCorrectly = step === "turn_left" ? delta < -0.075 : delta > 0.075;
 
         if (!movementStarted) {
           movedFrames = movedCorrectly ? movedFrames + 1 : 0;
@@ -246,7 +246,7 @@ export async function runFaceLiveness(
             onPrompt("Movimento detectado. Volte a olhar para a câmera");
           }
         } else {
-          returnedFrames = Math.abs(delta) < 0.1 ? returnedFrames + 1 : 0;
+          returnedFrames = Math.abs(delta) < 0.13 ? returnedFrames + 1 : 0;
           if (returnedFrames >= 2) {
             verifiedSignal = signal;
             break;
