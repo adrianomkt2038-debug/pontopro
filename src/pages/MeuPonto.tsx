@@ -380,7 +380,7 @@ export default function MeuPonto() {
               </div>
             )}
 
-            {!cameraActive && modelsError == null && myDescriptor && (
+            {!cameraActive && !modelsLoading && !modelsError && myDescriptor && (
               <div className="flex flex-col items-center justify-center gap-6 py-12 rounded-2xl border-2 border-dashed border-muted animate-in fade-in zoom-in duration-500">
                 <div className="h-24 w-24 rounded-full bg-accent/20 flex items-center justify-center group cursor-pointer" onClick={startCamera}>
                   <Camera className="h-10 w-10 text-muted-foreground group-hover:text-primary transition-colors" />
