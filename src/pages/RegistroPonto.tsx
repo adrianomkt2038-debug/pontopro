@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect, useCallback } from "react";
 import { useFaceApi } from "@/hooks/useFaceApi";
-import { issueFaceLivenessChallenge, runFaceLiveness, type FaceLivenessChallenge, type FaceLivenessProof } from "@/lib/faceLiveness";
+import { issueFaceLivenessChallenge, isFaceLivenessChallengeExpired, runFaceLiveness, type FaceLivenessChallenge, type FaceLivenessProof } from "@/lib/faceLiveness";
 import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -186,7 +186,7 @@ export default function RegistroPonto() {
         const pendingChallenge = livenessChallengeRef.current;
         const challenge = pendingChallenge
           && pendingChallenge.userId === bestMatch.user_id
-          && Date.parse(pendingChallenge.challenge.expiresAt) > Date.now()
+          && !isFaceLivenessChallengeExpired(pendingChallenge.challenge)
           ? pendingChallenge.challenge
           : await issueFaceLivenessChallenge(bestMatch.user_id, "clock_in");
         livenessChallengeRef.current = { userId: bestMatch.user_id, challenge };
