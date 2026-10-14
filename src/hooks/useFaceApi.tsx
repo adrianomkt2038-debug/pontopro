@@ -2,6 +2,20 @@ import { useState, useEffect, useCallback } from "react";
 import * as faceapi from "face-api.js";
 
 const MODEL_URL = "/models";
+const VIDEO_DETECTION_ATTEMPTS = 6;
+const VIDEO_DETECTION_RETRY_MS = 220;
+
+function isVideoInput(input: HTMLVideoElement | HTMLImageElement | HTMLCanvasElement): input is HTMLVideoElement {
+  return typeof input === "object"
+    && input !== null
+    && "videoWidth" in input
+    && "videoHeight" in input
+    && typeof (input as HTMLVideoElement).play === "function";
+}
+
+function waitForNextDetectionAttempt() {
+  return new Promise<void>((resolve) => window.setTimeout(resolve, VIDEO_DETECTION_RETRY_MS));
+}
 
 // FaceRegistration is rendered once per employee row. Sharing this promise
 // prevents every row from downloading/loading the same large models in parallel.
@@ -65,11 +79,33 @@ export function useFaceApi() {
   const detectFace = useCallback(
     async (input: HTMLVideoElement | HTMLImageElement | HTMLCanvasElement) => {
       if (!modelsLoaded) return null;
-      const detection = await faceapi
-        .detectSingleFace(input, new faceapi.TinyFaceDetectorOptions({ inputSize: 416, scoreThreshold: 0.4 }))
-        .withFaceLandmarks()
-        .withFaceDescriptor();
-      return detection || null;
+      const videoInput = isVideoInput(input) ? input : null;
+      const attempts = videoInput ? VIDEO_DETECTION_ATTEMPTS : 1;
+
+      // A single camera frame can be blurry or captured between frames. Try a
+      // few fresh frames before telling the employee that the face is missing.
+      for (let attempt = 0; attempt < attempts; attempt++) {
+        if (videoInput && (
+          videoInput.readyState < 2
+          || videoInput.videoWidth < 1
+          || videoInput.videoHeight < 1
+        )) {
+          await waitForNextDetectionAttempt();
+          continue;
+        }
+
+        const detection = await faceapi
+          .detectSingleFace(input, new faceapi.TinyFaceDetectorOptions({ inputSize: 416, scoreThreshold: 0.35 }))
+          .withFaceLandmarks()
+          .withFaceDescriptor();
+
+        if (detection) return detection;
+        if (videoInput && attempt < attempts - 1) {
+          await waitForNextDetectionAttempt();
+        }
+      }
+
+      return null;
     },
     [modelsLoaded]
   );
