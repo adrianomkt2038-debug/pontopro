@@ -31,7 +31,7 @@ const STEP_LABELS: Record<FaceLivenessStep, string> = {
   turn_right: "Vire a cabeça para o lado oposto e volte ao centro",
 };
 
-const ALL_STEPS: FaceLivenessStep[] = ["blink", "turn_left", "turn_right"];
+const ALLOWED_STEPS: FaceLivenessStep[] = ["blink", "turn_left", "turn_right"];
 const DETECTION_OPTIONS = new faceapi.TinyFaceDetectorOptions({
   // Match the main scanner's input scale while keeping a practical confidence threshold.
   inputSize: 416,
@@ -51,8 +51,15 @@ export function isFaceLivenessChallengeExpired(challenge: Pick<FaceLivenessChall
 }
 
 export function isValidLivenessSteps(steps: unknown): steps is FaceLivenessStep[] {
-  if (!Array.isArray(steps) || steps.length !== ALL_STEPS.length) return false;
-  return ALL_STEPS.every((step) => steps.includes(step)) && new Set(steps).size === ALL_STEPS.length;
+  // Keep liveness reliable on real cameras while retaining two independent,
+  // randomized actions: a blink and one head turn.
+  if (!Array.isArray(steps) || steps.length !== 2 || new Set(steps).size !== 2) return false;
+  if (!steps.every((step) => ALLOWED_STEPS.includes(step))) return false;
+
+  const hasBlink = steps.includes("blink");
+  const hasLeftTurn = steps.includes("turn_left");
+  const hasRightTurn = steps.includes("turn_right");
+  return hasBlink && hasLeftTurn !== hasRightTurn;
 }
 
 export function areLivenessStepsComplete(expected: readonly FaceLivenessStep[], actual: unknown): boolean {
