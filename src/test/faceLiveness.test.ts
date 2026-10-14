@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   areLivenessStepsComplete,
   calculateEyeAspectRatio,
+  hasLiveVideoTrack,
   isPlausibleLivenessDuration,
   isValidLivenessSteps,
 } from "@/lib/faceLiveness";
@@ -26,6 +27,18 @@ describe("face liveness verification helpers", () => {
     expect(isPlausibleLivenessDuration(1000)).toBe(false);
     expect(isPlausibleLivenessDuration(121000)).toBe(false);
     expect(isPlausibleLivenessDuration("5000")).toBe(false);
+  });
+
+
+  it("recognizes live camera tracks without relying on MediaStream instanceof", () => {
+    expect(hasLiveVideoTrack({
+      getVideoTracks: () => [{ readyState: "live" }],
+    })).toBe(true);
+    expect(hasLiveVideoTrack({
+      getVideoTracks: () => [{ readyState: "ended" }],
+    })).toBe(false);
+    expect(hasLiveVideoTrack(null)).toBe(false);
+    expect(hasLiveVideoTrack({})).toBe(false);
   });
 
   it("calculates eye aspect ratio safely", () => {
