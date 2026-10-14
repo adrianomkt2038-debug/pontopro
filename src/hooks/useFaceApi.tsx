@@ -1,111 +1,41 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 import * as faceapi from "face-api.js";
 
 const MODEL_URL = "/models";
-const VIDEO_DETECTION_ATTEMPTS = 6;
-const VIDEO_DETECTION_RETRY_MS = 220;
-
-function isVideoInput(input: HTMLVideoElement | HTMLImageElement | HTMLCanvasElement): input is HTMLVideoElement {
-  return typeof input === "object"
-    && input !== null
-    && "videoWidth" in input
-    && "videoHeight" in input
-    && typeof (input as HTMLVideoElement).play === "function";
-}
-
-function waitForNextDetectionAttempt() {
-  return new Promise<void>((resolve) => window.setTimeout(resolve, VIDEO_DETECTION_RETRY_MS));
-}
-
-// FaceRegistration is rendered once per employee row. Sharing this promise
-// prevents every row from downloading/loading the same large models in parallel.
-let modelLoadPromise: Promise<void> | null = null;
-
-function ensureFaceModelsLoaded(): Promise<void> {
-  if (!modelLoadPromise) {
-    modelLoadPromise = Promise.all([
-      faceapi.nets.tinyFaceDetector.loadFromUri(MODEL_URL),
-      faceapi.nets.faceLandmark68Net.loadFromUri(MODEL_URL),
-      faceapi.nets.faceRecognitionNet.loadFromUri(MODEL_URL),
-    ])
-      .then(() => undefined)
-      .catch((error) => {
-        // Permit an explicit retry after transient network/CDN/model-load failures.
-        modelLoadPromise = null;
-        throw error;
-      });
-  }
-
-  return modelLoadPromise;
-}
 
 export function useFaceApi() {
   const [modelsLoaded, setModelsLoaded] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [retryVersion, setRetryVersion] = useState(0);
-
-  const retryModels = useCallback(() => {
-    setError(null);
-    setLoading(true);
-    setRetryVersion((version) => version + 1);
-  }, []);
 
   useEffect(() => {
-    let cancelled = false;
-    setLoading(true);
-    setError(null);
-
-    ensureFaceModelsLoaded()
-      .then(() => {
-        if (!cancelled) setModelsLoaded(true);
-      })
-      .catch((err) => {
+    async function loadModels() {
+      try {
+        setLoading(true);
+        await Promise.all([
+          faceapi.nets.tinyFaceDetector.loadFromUri(MODEL_URL),
+          faceapi.nets.faceLandmark68Net.loadFromUri(MODEL_URL),
+          faceapi.nets.faceRecognitionNet.loadFromUri(MODEL_URL),
+        ]);
+        setModelsLoaded(true);
+      } catch (err) {
         console.error("Failed to load face-api models:", err);
-        if (!cancelled) {
-          setModelsLoaded(false);
-          setError("Não foi possível carregar os modelos de reconhecimento facial. Verifique a conexão e tente novamente.");
-        }
-      })
-      .finally(() => {
-        if (!cancelled) setLoading(false);
-      });
-
-    return () => {
-      cancelled = true;
-    };
-  }, [retryVersion]);
+        setError("Falha ao carregar modelos de reconhecimento facial");
+      } finally {
+        setLoading(false);
+      }
+    }
+    loadModels();
+  }, []);
 
   const detectFace = useCallback(
     async (input: HTMLVideoElement | HTMLImageElement | HTMLCanvasElement) => {
       if (!modelsLoaded) return null;
-      const videoInput = isVideoInput(input) ? input : null;
-      const attempts = videoInput ? VIDEO_DETECTION_ATTEMPTS : 1;
-
-      // A single camera frame can be blurry or captured between frames. Try a
-      // few fresh frames before telling the employee that the face is missing.
-      for (let attempt = 0; attempt < attempts; attempt++) {
-        if (videoInput && (
-          videoInput.readyState < 2
-          || videoInput.videoWidth < 1
-          || videoInput.videoHeight < 1
-        )) {
-          await waitForNextDetectionAttempt();
-          continue;
-        }
-
-        const detection = await faceapi
-          .detectSingleFace(input, new faceapi.TinyFaceDetectorOptions({ inputSize: 416, scoreThreshold: 0.35 }))
-          .withFaceLandmarks()
-          .withFaceDescriptor();
-
-        if (detection) return detection;
-        if (videoInput && attempt < attempts - 1) {
-          await waitForNextDetectionAttempt();
-        }
-      }
-
-      return null;
+      const detection = await faceapi
+        .detectSingleFace(input, new faceapi.TinyFaceDetectorOptions({ inputSize: 416, scoreThreshold: 0.5 }))
+        .withFaceLandmarks()
+        .withFaceDescriptor();
+      return detection || null;
     },
     [modelsLoaded]
   );
@@ -131,5 +61,5 @@ export function useFaceApi() {
     []
   );
 
-  return { modelsLoaded, loading, error, retryModels, detectFace, getDescriptorFromImage, compareFaces };
+  return { modelsLoaded, loading, error, detectFace, getDescriptorFromImage, compareFaces };
 }

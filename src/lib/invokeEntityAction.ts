@@ -1,5 +1,4 @@
 import { supabase } from "@/integrations/supabase/client";
-import { getEdgeFunctionErrorMessage } from "@/lib/registroPonto";
 
 export async function invokeEntityAction<T = unknown>(
   action: string,
@@ -13,7 +12,7 @@ export async function invokeEntityAction<T = unknown>(
   });
 
   if (error) {
-    throw new Error(await getEdgeFunctionErrorMessage(error, "Erro de comunicação com o serviço de cadastro facial."));
+    throw new Error(error.message || "Erro de comunicação com o backend");
   }
 
   if (!data?.success) {

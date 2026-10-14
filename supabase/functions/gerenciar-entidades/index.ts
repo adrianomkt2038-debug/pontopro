@@ -812,46 +812,13 @@ Deno.serve(async (req) => {
     if (action === "face_descriptor_upsert") {
       const targetUserId = sanitizeUUID(body.target_user_id);
       const avatarUrl = sanitizeText(body.avatar_url, 1500, false);
-      const challengeId = sanitizeUUID(body.liveness_challenge_id);
-      const proof = body.liveness_proof;
-      const proofSteps = proof?.completedSteps;
-      const proofDuration = proof?.durationMs;
 
       if (!auth.isAdmin && auth.userId !== targetUserId) {
         return jsonResponse({ success: false, error: "Forbidden" }, 403);
       }
 
-      if (!Array.isArray(body.descriptor) || body.descriptor.length !== 128) {
-        return jsonResponse({ success: false, error: "O descritor facial é inválido. Faça o cadastro novamente pela câmera." }, 400);
-      }
-
-      if (!challengeId || !Array.isArray(proofSteps) || proofSteps.length !== 2
-        || !Number.isSafeInteger(proofDuration) || proofDuration < 4000 || proofDuration > 120000) {
-        return jsonResponse({ success: false, error: "Prova de vida obrigatória. Faça o cadastro novamente pela câmera." }, 403);
-      }
-
-      const now = new Date().toISOString();
-      const { data: challenge, error: challengeError } = await auth.supabaseAdmin
-        .from("face_liveness_challenges")
-        .select("id, challenge_steps")
-        .eq("id", challengeId)
-        .eq("user_id", targetUserId)
-        .eq("purpose", "enrollment")
-        .gt("expires_at", now)
-        .is("consumed_at", null)
-        .maybeSingle();
-      if (challengeError) throw challengeError;
-
-      const expectedSteps = challenge?.challenge_steps as string[] | undefined;
-      const validExpectedSteps = Array.isArray(expectedSteps)
-        && expectedSteps.length === 2
-        && new Set(expectedSteps).size === 2
-        && expectedSteps.every((step) => ["blink", "turn_left", "turn_right"].includes(step))
-        && expectedSteps.includes("blink")
-        && (expectedSteps.includes("turn_left") !== expectedSteps.includes("turn_right"));
-      if (!challenge || !validExpectedSteps
-        || !expectedSteps!.every((step, index) => proofSteps[index] === step)) {
-        return jsonResponse({ success: false, error: "Prova de vida inválida ou expirada. Tente novamente." }, 403);
+      if (!Array.isArray(body.descriptor) || body.descriptor.length === 0 || body.descriptor.length > 1024) {
+        return jsonResponse({ success: false, error: "Invalid payload" }, 400);
       }
 
       const descriptor = body.descriptor.map((value: unknown) => {
@@ -860,43 +827,6 @@ Deno.serve(async (req) => {
         }
         return value;
       });
-
-      // Reject a descriptor already associated with a different employee.
-      const { data: otherFaces, error: otherFacesError } = await auth.supabaseAdmin
-        .from("face_descriptors")
-        .select("user_id, descriptor")
-        .neq("user_id", targetUserId);
-      if (otherFacesError) throw otherFacesError;
-
-      for (const otherFace of otherFaces || []) {
-        const otherDescriptor = otherFace.descriptor as number[];
-        if (!Array.isArray(otherDescriptor) || otherDescriptor.length !== descriptor.length) continue;
-        let sum = 0;
-        for (let i = 0; i < descriptor.length; i++) {
-          sum += Math.pow(descriptor[i] - otherDescriptor[i], 2);
-        }
-        if (Math.sqrt(sum) < 0.45) {
-          return jsonResponse({
-            success: false,
-            error: "Este rosto parece já estar cadastrado para outro colaborador. Solicite revisão do administrador.",
-          }, 409);
-        }
-      }
-
-      const { data: consumedChallenge, error: consumeError } = await auth.supabaseAdmin
-        .from("face_liveness_challenges")
-        .update({ consumed_at: new Date().toISOString() })
-        .eq("id", challengeId)
-        .eq("user_id", targetUserId)
-        .eq("purpose", "enrollment")
-        .gt("expires_at", new Date().toISOString())
-        .is("consumed_at", null)
-        .select("id")
-        .maybeSingle();
-      if (consumeError) throw consumeError;
-      if (!consumedChallenge) {
-        return jsonResponse({ success: false, error: "Esta prova de vida já foi utilizada ou expirou. Recomece o cadastro." }, 409);
-      }
 
       const { error: upsertError } = await auth.supabaseAdmin
         .from("face_descriptors")
