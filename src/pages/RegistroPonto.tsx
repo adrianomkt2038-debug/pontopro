@@ -179,8 +179,8 @@ export default function RegistroPonto() {
 
       if (bestMatch && bestMatch.distance < 0.6) {
         setLivenessPrompt("Solicitando desafio aleatório de prova de vida...");
-        livenessStarted = true;
         const challenge = await issueFaceLivenessChallenge(bestMatch.user_id, "clock_in");
+        livenessStarted = true;
         const liveness = await runFaceLiveness(videoRef.current, challenge, setLivenessPrompt);
         const verifiedDistance = compareFaces(liveness.descriptor, bestMatch.descriptor);
         if (verifiedDistance >= 0.6) {
