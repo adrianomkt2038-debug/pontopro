@@ -1,8 +1,11 @@
 import { describe, expect, it } from "vitest";
 import {
   areLivenessStepsComplete,
+  calculateBlinkThresholds,
   calculateEyeAspectRatio,
   hasLiveVideoTrack,
+  isHeadBackAtCenter,
+  isHeadTurnDetected,
   isPlausibleLivenessDuration,
   isValidLivenessSteps,
 } from "@/lib/faceLiveness";
@@ -46,5 +49,26 @@ describe("face liveness verification helpers", () => {
       { x: 0, y: 0 }, { x: 1, y: -1 }, { x: 2, y: -1 }, { x: 4, y: 0 }, { x: 2, y: 1 }, { x: 1, y: 1 },
     ])).toBeGreaterThan(0);
     expect(calculateEyeAspectRatio([])).toBe(0);
+  });
+
+  it("uses relative blink thresholds even for naturally narrow eyes", () => {
+    const narrowEyes = calculateBlinkThresholds(0.10);
+    expect(narrowEyes.closed).toBeCloseTo(0.07);
+    expect(narrowEyes.reopened).toBeCloseTo(0.088);
+    expect(narrowEyes.reopened).toBeLessThan(0.10);
+
+    const widerEyes = calculateBlinkThresholds(0.30);
+    expect(widerEyes.closed).toBeCloseTo(0.21);
+    expect(widerEyes.reopened).toBeCloseTo(0.264);
+    expect(widerEyes.reopened).toBeLessThan(0.30);
+  });
+
+  it("requires a head turn and a distinct return to center", () => {
+    expect(isHeadTurnDetected("turn_left", -0.05)).toBe(true);
+    expect(isHeadTurnDetected("turn_left", 0.05)).toBe(false);
+    expect(isHeadTurnDetected("turn_right", 0.05)).toBe(true);
+    expect(isHeadBackAtCenter(0.02)).toBe(true);
+    expect(isHeadBackAtCenter(-0.02)).toBe(true);
+    expect(isHeadBackAtCenter(0.05)).toBe(false);
   });
 });
