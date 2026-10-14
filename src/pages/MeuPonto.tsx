@@ -201,8 +201,9 @@ export default function MeuPonto() {
 
       if (distance < 0.6) {
         setLivenessPrompt("Solicitando desafio aleatório de prova de vida...");
-        const challenge = await issueFaceLivenessChallenge(user.id, "clock_in");
+        // Stop the automatic scanner even when the challenge endpoint fails or rate-limits.
         livenessStarted = true;
+        const challenge = await issueFaceLivenessChallenge(user.id, "clock_in");
         const liveness = await runFaceLiveness(videoRef.current, challenge, setLivenessPrompt);
         const verifiedDistance = compareFaces(liveness.descriptor, myDescriptor);
         if (verifiedDistance >= 0.6) {
@@ -228,7 +229,11 @@ export default function MeuPonto() {
       if (livenessStarted) {
         mustRestartCamera = true;
         setLivenessBlocked(true);
-        setLivenessPrompt("Prova de vida não concluída. Feche a câmera e inicie novamente.");
+        const failureMessage = err instanceof Error ? err.message : "";
+        const rateLimited = /muitas tentativas|aguarde um minuto/i.test(failureMessage);
+        setLivenessPrompt(rateLimited
+          ? "Limite temporário de tentativas. Aguarde um minuto e reinicie a câmera."
+          : "Prova de vida não concluída. Feche a câmera e inicie novamente.");
       }
       toast({
         title: "Verificação facial não concluída",
