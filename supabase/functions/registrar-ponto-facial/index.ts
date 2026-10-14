@@ -202,6 +202,19 @@ serve(async (req) => {
         const j = random[0] % (i + 1);
         [steps[i], steps[j]] = [steps[j], steps[i]];
       }
+      const recentWindow = new Date(Date.now() - 60_000).toISOString();
+      const { count: recentChallenges, error: rateLimitError } = await supabase
+        .from("face_liveness_challenges")
+        .select("id", { count: "exact", head: true })
+        .eq("user_id", user_id)
+        .gt("created_at", recentWindow);
+      if (rateLimitError) throw rateLimitError;
+      if ((recentChallenges ?? 0) >= 5) {
+        return new Response(JSON.stringify({ success: false, error: "Muitas tentativas de prova de vida. Aguarde um minuto e tente novamente." }), {
+          status: 429, headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+
       const expiresAt = new Date(Date.now() + 120000).toISOString();
       const { data: challenge, error: challengeError } = await supabase
         .from("face_liveness_challenges")
