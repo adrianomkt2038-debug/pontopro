@@ -9,6 +9,8 @@ export interface FaceLivenessChallenge {
   id: string;
   steps: FaceLivenessStep[];
   expiresAt: string;
+  /** Client-side monotonic deadline; avoids workstation clock skew. */
+  clientDeadline: number;
 }
 
 export interface FaceLivenessProof {
@@ -38,6 +40,14 @@ const DETECTION_OPTIONS = new faceapi.TinyFaceDetectorOptions({
 
 export function getLivenessStepLabel(step: FaceLivenessStep): string {
   return STEP_LABELS[step];
+}
+
+export function isFaceLivenessChallengeExpired(challenge: Pick<FaceLivenessChallenge, "expiresAt" | "clientDeadline">): boolean {
+  if (Number.isFinite(challenge.clientDeadline)) {
+    return performance.now() >= challenge.clientDeadline;
+  }
+  const serverExpiry = Date.parse(challenge.expiresAt);
+  return !Number.isFinite(serverExpiry) || Date.now() >= serverExpiry;
 }
 
 export function isValidLivenessSteps(steps: unknown): steps is FaceLivenessStep[] {
@@ -205,10 +215,17 @@ export async function issueFaceLivenessChallenge(
     throw new Error(data?.error || "Não foi possível obter um desafio facial seguro. Tente novamente.");
   }
 
+  const expiresAt = data.challenge.expires_at as string;
+  if (!Number.isFinite(Date.parse(expiresAt))) {
+    throw new Error("O servidor retornou um prazo inválido para o desafio facial. Tente novamente.");
+  }
+
   return {
     id: data.challenge.id as string,
     steps: data.challenge.steps as FaceLivenessStep[],
-    expiresAt: data.challenge.expires_at as string,
+    expiresAt,
+    // Server grants 120s. Use a 10s safety margin without wall-clock dependence.
+    clientDeadline: performance.now() + 110000,
   };
 }
 
@@ -222,8 +239,7 @@ export async function runFaceLiveness(
   }
 
   const startedAt = performance.now();
-  const expiresAt = Date.parse(challenge.expiresAt);
-  if (!Number.isFinite(expiresAt) || expiresAt <= Date.now()) {
+  if (isFaceLivenessChallengeExpired(challenge)) {
     throw new Error("O desafio facial expirou. Inicie a verificação novamente.");
   }
 
@@ -239,7 +255,7 @@ export async function runFaceLiveness(
   let lastSignal: FaceSignal | null = null;
 
   while (baselineYawSamples.length < 4 && performance.now() < calibrationDeadline) {
-    if (Date.now() >= expiresAt) throw new Error("O desafio facial expirou. Tente novamente.");
+    if (isFaceLivenessChallengeExpired(challenge)) throw new Error("O desafio facial expirou. Tente novamente.");
     const signal = await nextFaceSignal(video, calibrationDeadline);
     if (!signal) break;
     // Individual eye shape and camera angle affect EAR. Keep a per-person
@@ -284,7 +300,7 @@ export async function runFaceLiveness(
     let detectedTurnDirection: HeadTurnDirection | null = null;
 
     while (performance.now() < stepDeadline) {
-      if (Date.now() >= expiresAt) throw new Error("O desafio facial expirou. Inicie novamente.");
+      if (isFaceLivenessChallengeExpired(challenge)) throw new Error("O desafio facial expirou. Inicie novamente.");
       const signal = await nextFaceSignal(video, stepDeadline);
       if (!signal) break;
       lastSignal = signal;
@@ -335,7 +351,7 @@ export async function runFaceLiveness(
 
   // Enforce a minimum duration so a challenge cannot be submitted as an instant replay.
   while (performance.now() - startedAt < 4500) {
-    if (Date.now() >= expiresAt) throw new Error("O desafio facial expirou. Inicie novamente.");
+    if (isFaceLivenessChallengeExpired(challenge)) throw new Error("O desafio facial expirou. Inicie novamente.");
     onPrompt("Prova de vida concluída. Mantenha o rosto centralizado");
     const signal = await nextFaceSignal(video, performance.now() + 700);
     if (signal) lastSignal = signal;
@@ -353,7 +369,7 @@ export async function runFaceLiveness(
   const descriptorDeadline = performance.now() + 5000;
   let finalDescriptor: number[] | null = null;
   while (performance.now() < descriptorDeadline) {
-    if (Date.now() >= expiresAt) throw new Error("O desafio facial expirou. Inicie novamente.");
+    if (isFaceLivenessChallengeExpired(challenge)) throw new Error("O desafio facial expirou. Inicie novamente.");
     if (!hasLiveVideoTrack(video.srcObject)) {
       throw new Error("A câmera foi desconectada. Reative a câmera e tente novamente.");
     }
