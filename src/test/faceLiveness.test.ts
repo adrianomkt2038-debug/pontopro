@@ -3,6 +3,7 @@ import {
   areLivenessStepsComplete,
   calculateBlinkThresholds,
   calculateEyeAspectRatio,
+  getHeadTurnDirection,
   hasLiveVideoTrack,
   isHeadBackAtCenter,
   isHeadTurnDetected,
@@ -63,10 +64,14 @@ describe("face liveness verification helpers", () => {
     expect(widerEyes.reopened).toBeLessThan(0.30);
   });
 
-  it("requires a head turn and a distinct return to center", () => {
-    expect(isHeadTurnDetected("turn_left", -0.05)).toBe(true);
-    expect(isHeadTurnDetected("turn_left", 0.05)).toBe(false);
-    expect(isHeadTurnDetected("turn_right", 0.05)).toBe(true);
+  it("adapts head-turn detection to mirrored camera direction and requires the opposite second turn", () => {
+    expect(getHeadTurnDirection(-0.05)).toBe(-1);
+    expect(getHeadTurnDirection(0.05)).toBe(1);
+    expect(getHeadTurnDirection(0.02)).toBe(null);
+    expect(isHeadTurnDetected(-0.05, null)).toBe(true);
+    expect(isHeadTurnDetected(0.05, null)).toBe(true);
+    expect(isHeadTurnDetected(-0.05, 1)).toBe(true);
+    expect(isHeadTurnDetected(0.05, 1)).toBe(false);
     expect(isHeadBackAtCenter(0.02)).toBe(true);
     expect(isHeadBackAtCenter(-0.02)).toBe(true);
     expect(isHeadBackAtCenter(0.05)).toBe(false);
