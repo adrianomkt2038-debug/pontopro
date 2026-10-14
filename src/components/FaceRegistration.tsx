@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect, useCallback } from "react";
 import { useFaceApi } from "@/hooks/useFaceApi";
-import { issueFaceLivenessChallenge, runFaceLiveness } from "@/lib/faceLiveness";
+import { issueFaceLivenessChallenge, runFaceLiveness, type FaceLivenessChallenge } from "@/lib/faceLiveness";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { useToast } from "@/hooks/use-toast";
@@ -17,6 +17,8 @@ interface FaceRegistrationProps {
 export function FaceRegistration({ userId, userName, onRegistered }: FaceRegistrationProps) {
   const videoRef = useRef<HTMLVideoElement>(null);
   const streamRef = useRef<MediaStream | null>(null);
+  // Keep a failed but still-valid enrollment challenge for the next user attempt.
+  const livenessChallengeRef = useRef<FaceLivenessChallenge | null>(null);
   const { modelsLoaded, loading: modelsLoading, error: modelsError, retryModels } = useFaceApi();
   const { toast } = useToast();
 
@@ -123,8 +125,13 @@ export function FaceRegistration({ userId, userName, onRegistered }: FaceRegistr
 
     try {
       setLivenessPrompt("Solicitando desafio aleatório de prova de vida...");
-      const challenge = await issueFaceLivenessChallenge(userId, "enrollment");
+      const pendingChallenge = livenessChallengeRef.current;
+      const challenge = pendingChallenge && Date.parse(pendingChallenge.expiresAt) > Date.now()
+        ? pendingChallenge
+        : await issueFaceLivenessChallenge(userId, "enrollment");
+      livenessChallengeRef.current = challenge;
       const result = await runFaceLiveness(videoRef.current, challenge, setLivenessPrompt);
+      livenessChallengeRef.current = null;
       await saveDescriptor(result.descriptor, challenge.id, result.proof);
     } catch (err) {
       console.error("Face enrollment liveness failed:", err);
