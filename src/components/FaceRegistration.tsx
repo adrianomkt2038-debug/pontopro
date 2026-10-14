@@ -18,7 +18,7 @@ export function FaceRegistration({ userId, userName, onRegistered }: FaceRegistr
   const videoRef = useRef<HTMLVideoElement>(null);
   const streamRef = useRef<MediaStream | null>(null);
   // Keep a failed but still-valid enrollment challenge for the next user attempt.
-  const livenessChallengeRef = useRef<FaceLivenessChallenge | null>(null);
+  const livenessChallengeRef = useRef<{ userId: string; challenge: FaceLivenessChallenge } | null>(null);
   const { modelsLoaded, loading: modelsLoading, error: modelsError, retryModels } = useFaceApi();
   const { toast } = useToast();
 
@@ -126,10 +126,12 @@ export function FaceRegistration({ userId, userName, onRegistered }: FaceRegistr
     try {
       setLivenessPrompt("Solicitando desafio aleatório de prova de vida...");
       const pendingChallenge = livenessChallengeRef.current;
-      const challenge = pendingChallenge && Date.parse(pendingChallenge.expiresAt) > Date.now()
-        ? pendingChallenge
+      const challenge = pendingChallenge
+        && pendingChallenge.userId === userId
+        && Date.parse(pendingChallenge.challenge.expiresAt) > Date.now()
+        ? pendingChallenge.challenge
         : await issueFaceLivenessChallenge(userId, "enrollment");
-      livenessChallengeRef.current = challenge;
+      livenessChallengeRef.current = { userId, challenge };
       const result = await runFaceLiveness(videoRef.current, challenge, setLivenessPrompt);
       livenessChallengeRef.current = null;
       await saveDescriptor(result.descriptor, challenge.id, result.proof);
