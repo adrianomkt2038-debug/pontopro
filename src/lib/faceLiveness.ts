@@ -194,7 +194,7 @@ export async function runFaceLiveness(
     if (!signal) break;
     // Individual eye shape and camera angle affect EAR. Keep a per-person
     // open-eye baseline instead of requiring one fixed EAR for every employee.
-    if (signal.ear >= 0.06) {
+    if (signal.ear >= 0.03) {
       baselineYawSamples.push(signal.yaw);
       baselineEarSamples.push(signal.ear);
       lastSignal = signal;
@@ -210,13 +210,13 @@ export async function runFaceLiveness(
   const baselineYaw = sortedYaw[Math.floor(sortedYaw.length / 2)];
   const sortedEar = [...baselineEarSamples].sort((a, b) => a - b);
   const baselineOpenEar = sortedEar[Math.floor(sortedEar.length / 2)];
-  const closedEyeThreshold = Math.max(0.12, Math.min(0.23, baselineOpenEar * 0.72));
-  const reopenedEyeThreshold = Math.max(closedEyeThreshold + 0.025, baselineOpenEar * 0.84);
+  const closedEyeThreshold = baselineOpenEar * 0.70;
+  const reopenedEyeThreshold = baselineOpenEar * 0.88;
   const completedSteps: FaceLivenessStep[] = [];
 
   for (const step of challenge.steps) {
     onPrompt(STEP_LABELS[step]);
-    const stepDeadline = performance.now() + 10000;
+    const stepDeadline = performance.now() + 15000;
     let blinkClosed = false;
     let movedFrames = 0;
     let returnedFrames = 0;
@@ -237,7 +237,7 @@ export async function runFaceLiveness(
         }
       } else {
         const delta = signal.yaw - baselineYaw;
-        const movedCorrectly = step === "turn_left" ? delta < -0.06 : delta > 0.06;
+        const movedCorrectly = step === "turn_left" ? delta < -0.04 : delta > 0.04;
 
         if (!movementStarted) {
           movedFrames = movedCorrectly ? movedFrames + 1 : 0;
@@ -246,7 +246,7 @@ export async function runFaceLiveness(
             onPrompt("Movimento detectado. Volte a olhar para a câmera");
           }
         } else {
-          returnedFrames = Math.abs(delta) < 0.12 ? returnedFrames + 1 : 0;
+          returnedFrames = Math.abs(delta) < 0.03 ? returnedFrames + 1 : 0;
           if (returnedFrames >= 2) {
             verifiedSignal = signal;
             break;
