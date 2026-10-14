@@ -195,13 +195,12 @@ serve(async (req) => {
         });
       }
 
-      const steps = ["blink", "turn_left", "turn_right"];
-      for (let i = steps.length - 1; i > 0; i--) {
-        const random = new Uint32Array(1);
-        crypto.getRandomValues(random);
-        const j = random[0] % (i + 1);
-        [steps[i], steps[j]] = [steps[j], steps[i]];
-      }
+      const turnChoice = new Uint32Array(1);
+      const orderChoice = new Uint32Array(1);
+      crypto.getRandomValues(turnChoice);
+      crypto.getRandomValues(orderChoice);
+      const steps = ["blink", turnChoice[0] % 2 === 0 ? "turn_left" : "turn_right"];
+      if (orderChoice[0] % 2 === 1) steps.reverse();
       const recentWindow = new Date(Date.now() - 60_000).toISOString();
       const { count: recentChallenges, error: rateLimitError } = await supabase
         .from("face_liveness_challenges")
@@ -246,7 +245,7 @@ serve(async (req) => {
     const proofDuration = proof?.durationMs;
     const validProof = Array.isArray(proofSteps)
       && Array.isArray(proof?.completedSteps)
-      && proofSteps.length === 3
+      && proofSteps.length === 2
       && proofDuration >= 4000
       && proofDuration <= 120000
       && Number.isSafeInteger(proofDuration);
@@ -268,9 +267,14 @@ serve(async (req) => {
       .maybeSingle();
     if (challengeLookupError) throw challengeLookupError;
     const expectedSteps = livenessChallenge?.challenge_steps as string[] | undefined;
-    if (!livenessChallenge || !expectedSteps || expectedSteps.length !== 3
-      || !expectedSteps.every((step, index) => proofSteps[index] === step)
-      || !["blink", "turn_left", "turn_right"].every((step) => expectedSteps.includes(step))) {
+    const validExpectedSteps = Array.isArray(expectedSteps)
+      && expectedSteps.length === 2
+      && new Set(expectedSteps).size === 2
+      && expectedSteps.every((step) => ["blink", "turn_left", "turn_right"].includes(step))
+      && expectedSteps.includes("blink")
+      && (expectedSteps.includes("turn_left") !== expectedSteps.includes("turn_right"));
+    if (!livenessChallenge || !validExpectedSteps
+      || !expectedSteps!.every((step, index) => proofSteps[index] === step)) {
       return new Response(JSON.stringify({ success: false, error: "Prova de vida inválida ou expirada. Tente novamente." }), {
         status: 403, headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
