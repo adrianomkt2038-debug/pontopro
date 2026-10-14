@@ -493,16 +493,14 @@ export default function RegistroPonto() {
                         {livenessBlocked && cameraActive && (
                           <div className="absolute inset-0 z-30 flex flex-col items-center justify-center gap-4 bg-black/75 p-6 text-center">
                             <p className="max-w-sm text-sm font-semibold text-white">{livenessPrompt}</p>
-                            {!/limite temporário/i.test(livenessPrompt) && (
-                              <Button
-                                type="button"
-                                className="gap-2"
-                                onClick={() => setLivenessBlocked(false)}
-                              >
-                                <RefreshCw className="h-4 w-4" />
-                                Tentar novamente
-                              </Button>
-                            )}
+                            <Button
+                              type="button"
+                              className="gap-2"
+                              onClick={() => setLivenessBlocked(false)}
+                            >
+                              <RefreshCw className="h-4 w-4" />
+                              Tentar novamente
+                            </Button>
                           </div>
                         )}
 
