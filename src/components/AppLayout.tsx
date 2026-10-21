@@ -39,10 +39,15 @@ export function AppLayout({ children }: { children: ReactNode }) {
       <div className="min-h-screen flex w-full bg-background/50">
         <AppSidebar />
         <div className="flex-1 flex flex-col min-w-0">
-          <header className="h-16 flex items-center justify-between border-b bg-card/80 backdrop-blur-md px-6 shrink-0 sticky top-0 z-30 shadow-sm">
-            <div className="flex items-center gap-4">
-              <SidebarTrigger className="h-9 w-9" />
+          <header className="h-16 flex items-center justify-between border-b bg-card/80 backdrop-blur-md px-3 sm:px-6 shrink-0 sticky top-0 z-30 shadow-sm">
+            <div className="flex items-center gap-2 sm:gap-4 min-w-0">
+              <SidebarTrigger className="h-9 w-9 shrink-0" />
               <div className="h-6 w-[1px] bg-border hidden sm:block" />
+              {isAdmin && (
+                <h2 className="md:hidden text-[10px] font-extrabold tracking-[0.08em] text-foreground whitespace-nowrap">
+                  PONTO PRO
+                </h2>
+              )}
               <h2 className="text-sm font-semibold text-muted-foreground hidden md:block">
                 Ponto Pro <span className="mx-1 text-border">/</span>
                 <span className="text-foreground capitalize">
