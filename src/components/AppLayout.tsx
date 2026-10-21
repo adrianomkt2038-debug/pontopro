@@ -43,11 +43,9 @@ export function AppLayout({ children }: { children: ReactNode }) {
             <div className="flex items-center gap-2 sm:gap-4 min-w-0">
               <SidebarTrigger className="h-9 w-9 shrink-0" />
               <div className="h-6 w-[1px] bg-border hidden sm:block" />
-              {isAdmin && (
-                <h2 className="md:hidden text-[10px] font-extrabold tracking-[0.08em] text-foreground whitespace-nowrap">
-                  PONTO PRO
-                </h2>
-              )}
+              <h2 className="md:hidden text-[10px] font-extrabold tracking-[0.08em] text-foreground whitespace-nowrap">
+                PONTO PRO
+              </h2>
               <h2 className="text-sm font-semibold text-muted-foreground hidden md:block">
                 Ponto Pro <span className="mx-1 text-border">/</span>
                 <span className="text-foreground capitalize">
